@@ -10,3 +10,15 @@ class Tensor:
 
     def __mul__(self,other):
         return Tensor(self.data + other.data)
+    
+    def __repr__(self):
+        return f"tensor({self.data})"
+    
+    
+if __name__ == "__main__":
+    x = Tensor([8])
+    y = Tensor([5])    
+    z = x+y
+
+    print(z)
+    
