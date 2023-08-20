@@ -8,7 +8,10 @@ G.clear()
 
 def visit_nodes(G: graphviz.Digraph, node: Tensor):
     uid = str(id(node))
-    G.node(uid, f"Tensor: ({str(node.data) }  { 'grad: '+str(node.grad.data) if node.grad is not None else ''}) ")
+    G.node(
+        uid,
+        f"Tensor: ({str(node.data) }  { 'grad: '+str(node.grad.data) if node.grad is not None else ''}) ",
+    )
     if node._ctx:
         ctx_uid = str(id(node._ctx))
         G.node(ctx_uid, f"Context: {str(node._ctx.op.__name__)}")
@@ -18,14 +21,12 @@ def visit_nodes(G: graphviz.Digraph, node: Tensor):
             visit_nodes(G, child)
 
 
-
-
 def f(x):
     return x * x * x + x
+
+
 # Defining the function to plot the given function and its derivative using the custom Tensor class
 def plot_function_and_derivative():
-    
-
     # Values for x ranging from -3 to 3
     x_values_custom = np.linspace(-3, 3, 100)
     y_values_custom = []
@@ -41,16 +42,16 @@ def plot_function_and_derivative():
 
     # Plotting the original function and its derivative using the custom implementation
     plt.plot(x_values_custom, y_values_custom, label="f(x) = x^3 + x (custom)")
-    plt.plot(x_values_custom, derivative_values_custom, label="f'(x) = 3x^2 + 1 (custom)")
+    plt.plot(
+        x_values_custom, derivative_values_custom, label="f'(x) = 3x^2 + 1 (custom)"
+    )
 
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.title('Plot of the Function and its Derivative (Custom Implementation)')
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.title("Plot of the Function and its Derivative (Custom Implementation)")
     plt.legend()
     plt.grid(True)
     plt.show()
-
-
 
 
 if __name__ == "__main__":
@@ -62,7 +63,3 @@ if __name__ == "__main__":
     visit_nodes(G, z)
     G.render(directory="vis", view=True)
     print(f"Z:{x} grad:{x.grad}")
-
-  
-    
-    
