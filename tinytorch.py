@@ -24,6 +24,9 @@ class Tensor:
         return f"tensor({self.data})"
 
     def backward(self,grad=None):
+        if self._ctx is None:
+            return 
+        
         if grad is None:
             grad = Tensor([1.])
             self.grad = grad
@@ -34,8 +37,11 @@ class Tensor:
         grads = op.backward(self._ctx,grad)
         
         for tensor,grad in zip(child_nodes,grads):
-            tensor.grad = grad
-            
+            if tensor.grad is None:
+                tensor.grad = Tensor(np.zeros_like(self.data))
+            tensor.grad += grad
+            tensor.backward(grad)
+    
 
 class Function:
     def __init__(self, op, *args):
@@ -51,7 +57,7 @@ class Add:
     @staticmethod
     def backward(ctx, grad):
         x, y = ctx.args
-        return Tensor([1]), Tensor([1])
+        return Tensor([1])*grad, Tensor([1]) *grad
 
 
 class Mul:
@@ -62,28 +68,21 @@ class Mul:
     @staticmethod
     def backward(ctx, grad):
         x, y = ctx.args
-        return Tensor(y.data), Tensor(x.data)  #  dz/dx, dz/dy
+        return Tensor(y.data)*grad, Tensor(x.data)*grad #  dz/dx, dz/dy
+
+
 
 
 if __name__ == "__main__":
-    x = Tensor([8])
-    y = Tensor([5])
     
-    print("Add")
-    z = x + y
-    print(z)
+    def f(x):
+        return x*x*x + x
+    
+    x = Tensor([1.2])
+    
+    z = f(x)
     z.backward()
-    print(f"x: {x} , grad {x.grad}")
-    print(f"y: {y} , grad {y.grad}")
-    print("="*100)
-    
-    print("Mul")
-    z = x * y
-    print(z)
-    z.backward()
-    print(f"x: {x} , grad {x.grad}")
-    print(f"y: {y} , grad {y.grad}")
-    print("="*100)
-    
+    print(f"X: {x} grad: {x.grad}")
+
     
     
