@@ -58,6 +58,13 @@ class Tensor:
     def clone(self) -> Tensor:
         return Tensor(self.data.clone())
 
+    def _undo_broadcast(self, tensor: Tensor, grad: Tensor):
+        data = tensor.data
+        grad = grad.data
+        while data.shape != grad.shape: 
+            grad = grad.sum(axis=0, keepdims=(len(grad.shape) == 1)) 
+        return Tensor(grad)
+    
     def backward(self, grad=None):
         if self._ctx is None:
             return
@@ -76,6 +83,7 @@ class Tensor:
         for tensor, grad in zip(child_nodes, grads):
             if grad is None:
                 continue
+            grad = self._undo_broadcast(tensor,grad)
             if tensor.grad is None:
                 tensor.grad = Tensor(np.zeros_like(tensor.data))
             tensor.grad += grad.detach()
@@ -134,12 +142,9 @@ def zeros(shape) -> Tensor:
 
 
 if __name__ == "__main__":
-
-    def f(x):
-        return x * x * x + x
-
-    x = Tensor([1.2])
-
-    z = f(x)
-    z.backward()
+    x = Tensor([1,2,3])
+    y = Tensor([4])
+    z = x*y
+    z.backward(ones(z.shape)) # don't forget this
     print(f"X: {x} grad: {x.grad}")
+    print(f"Y: {y} grad: {y.grad}")
