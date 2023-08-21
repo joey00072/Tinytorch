@@ -17,7 +17,7 @@ class Tensor:
         if isinstance(data, np.ndarray):
             return data
         if isinstance(data, Tensor):
-            return data.data.clone()
+            return data.data.copy()
         raise ValueError("Invalid value passed to tensor")
 
     @staticmethod
@@ -47,6 +47,10 @@ class Tensor:
     def __repr__(self):
         return f"tensor({self.data})"
 
+    @property
+    def shape(self) -> tuple:
+        return self.data.shape
+
     def detach(self) -> Tensor:
         self._ctx = None
         return self
@@ -73,7 +77,7 @@ class Tensor:
             if grad is None:
                 continue
             if tensor.grad is None:
-                tensor.grad = Tensor(np.zeros_like(self.data))
+                tensor.grad = Tensor(np.zeros_like(tensor.data))
             tensor.grad += grad.detach()
             tensor.backward(grad)
 
@@ -119,6 +123,14 @@ class Mul(Function):
     def backward(ctx, grad):
         x, y = ctx.args
         return Tensor(y.data) * grad, Tensor(x.data) * grad  #  dz/dx, dz/dy
+
+
+def ones(shape) -> Tensor:
+    return Tensor(np.ones(shape))
+
+
+def zeros(shape) -> Tensor:
+    return Tensor(np.zeros(shape))
 
 
 if __name__ == "__main__":
