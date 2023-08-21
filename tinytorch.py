@@ -3,10 +3,11 @@ import numpy as np
 
 
 class Tensor:
-    def __init__(self, data):
+    def __init__(self, data, requires_grad=False):
         self.data: np.ndarray = Tensor._data_to_numpy(data)
         self.grad: Tensor = None
         self._ctx: Function = None
+        self.requires_grad: bool = requires_grad
 
     @staticmethod
     def _data_to_numpy(data):
@@ -55,16 +56,16 @@ class Tensor:
         self._ctx = None
         return self
 
-    def clone(self) -> Tensor:
-        return Tensor(self.data.clone())
+    def clone(self, requires_grad=False) -> Tensor:
+        return Tensor(self.data.clone(), requires_grad=requires_grad)
 
     def _undo_broadcast(self, tensor: Tensor, grad: Tensor):
         data = tensor.data
         grad = grad.data
-        while data.shape != grad.shape: 
-            grad = grad.sum(axis=0, keepdims=(len(grad.shape) == 1)) 
+        while data.shape != grad.shape:
+            grad = grad.sum(axis=0, keepdims=(len(grad.shape) == 1))
         return Tensor(grad)
-    
+
     def backward(self, grad=None):
         if self._ctx is None:
             return
@@ -83,7 +84,7 @@ class Tensor:
         for tensor, grad in zip(child_nodes, grads):
             if grad is None:
                 continue
-            grad = self._undo_broadcast(tensor,grad)
+            grad = self._undo_broadcast(tensor, grad)
             if tensor.grad is None:
                 tensor.grad = Tensor(np.zeros_like(tensor.data))
             tensor.grad += grad.detach()
@@ -99,15 +100,25 @@ class Function:
     def apply(cls, *args):
         ctx = Function(cls, *args)
         result = cls.forward(*args)
-        result._ctx = ctx
+        if Function._is_part_of_graph(ctx):
+            result._ctx = ctx
         return result
 
     @staticmethod
-    def forward(self, *args):
+    def _is_part_of_graph(ctx: Function):
+        for node in ctx.args:
+            if isinstance(node, Tensor) and (
+                node.requires_grad or node._ctx is not None
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def forward(self, *args) -> Tensor:
         raise NotImplementedError
 
     @staticmethod
-    def backward(self, *args):
+    def backward(self, *args) -> Tensor:
         raise NotImplementedError
 
 
@@ -133,18 +144,26 @@ class Mul(Function):
         return Tensor(y.data) * grad, Tensor(x.data) * grad  #  dz/dx, dz/dy
 
 
-def ones(shape) -> Tensor:
-    return Tensor(np.ones(shape))
+def ones(shape, requires_grad=False) -> Tensor:
+    return Tensor(np.ones(shape), requires_grad=requires_grad)
 
 
-def zeros(shape) -> Tensor:
-    return Tensor(np.zeros(shape))
+def zeros(shape, requires_grad=False) -> Tensor:
+    return Tensor(np.zeros(shape), requires_grad=requires_grad)
 
 
 if __name__ == "__main__":
-    x = Tensor([1,2,3])
+    x = Tensor([1, 2, 3])
     y = Tensor([4])
-    z = x*y
-    z.backward(ones(z.shape)) # don't forget this
+    z = x * y
+    z.backward(ones(z.shape))  # don't forget this
+    print(f"X: {x} grad: {x.grad}")
+    print(f"Y: {y} grad: {y.grad}")
+
+    print("="*100)
+    x = Tensor([1, 2, 3],requires_grad=True)
+    y = Tensor([4],requires_grad=True)
+    z = x * y
+    z.backward(ones(z.shape))  # don't forget this
     print(f"X: {x} grad: {x.grad}")
     print(f"Y: {y} grad: {y.grad}")
