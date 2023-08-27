@@ -7,6 +7,7 @@ this is really autograd engine backed by numpy<br><br>
 >> `tinytorch.py` shall always remain under 1000 lines. if not we will revert commit
 
  
+[![Python package](https://github.com/joey00072/tinytorch/actions/workflows/unit_test.yaml/badge.svg)](https://github.com/joey00072/tinytorch/actions/workflows/unit_test.yaml)
 
 $$
 f(x) =x^3+x
