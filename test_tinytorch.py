@@ -342,9 +342,29 @@ def test_cross_entropy():
     ), "Gradients do not match."
 
 
-# Add this line to the end of your script to run the test
-if __name__ == "__main__":
-    test_cross_entropy()
+def test_transpose():
+    x = np.random.rand(3, 4)  # Create a 3x4 random matrix
 
+    x_t = torch.tensor(x, requires_grad=True)  # Create a PyTorch tensor
+    x_tt = tinytorch.tensor(x, requires_grad=True)  # Create a tinytorch tensor
+
+    # Perform the transpose operation using PyTorch
+    z_t = x_t.t()
+    z_t.sum().backward()  # Compute the gradients via backpropagation
+
+    # Perform the transpose operation using tinytorch
+    z_tt = x_tt.t()
+    z_tt.sum().backward()  # Compute the gradients via backpropagation
+
+    # Assert that the transpose operation results are the same for both PyTorch and tinytorch
+    assert np.allclose(
+        z_t.detach().numpy(), z_tt.data
+    ), "Transpose results do not match between PyTorch and tinytorch."
+
+    # Assert that the gradients are the same for both PyTorch and tinytorch
+    assert np.allclose(
+        x_t.grad.numpy(), x_tt.grad.data
+    ), "Gradients do not match between PyTorch and tinytorch."
+    
 if __name__ == "__main__":
-    test_mse_loss()
+    test_transpose()

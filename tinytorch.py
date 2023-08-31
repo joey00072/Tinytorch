@@ -103,6 +103,24 @@ class Tensor:
         shape = tuple(curr // target if s == -1 else s for s in shape)
         return Reshape.apply(self, shape)
 
+    def transpose(self, dim1=-2, dim2=-1):
+        num_axes = len(self.shape)
+        dim1, dim2 = (dim1 + num_axes) % num_axes, (dim2 + num_axes) % num_axes
+        axes = list(range(num_axes))
+        axes[dim1], axes[dim2] = dim2, dim1
+        return Transpose.apply(self, axes)
+    
+    def t(self):
+        return self.transpose()
+
+    @property
+    def shape(self) -> tuple:
+        return self.data.shape
+
+    @property
+    def size(self) -> tuple:
+        return self.data.size
+
     def _reduce_shape(self, axis=None):
         # Determine which axes to reduce
         if axis is None:
@@ -130,13 +148,8 @@ class Tensor:
         ret: Tensor = Sum.apply(self, new_shape)
         return ret if keepdims else ret.reshape(shape=shape)
 
-    @property
-    def shape(self) -> tuple:
-        return self.data.shape
-
-    @property
-    def size(self) -> tuple:
-        return self.data.size
+    def zero_(self):
+        self.data = np.zeros_like(self.data)
 
     def detach(self) -> Tensor:
         self._ctx = None
@@ -288,9 +301,19 @@ class Reshape(Function):
 
     @staticmethod
     def backward(ctx: Function, grad: Tensor) -> Tensor:
-        print(f"{ctx.args=}")
         x, _ = ctx.args
         return Tensor(grad.data.reshape(x.shape)), None
+
+
+class Transpose(Function):
+    @staticmethod
+    def forward(x: Tensor, axes) -> Tensor:
+        return Tensor(x.data.transpose(axes))
+
+    @staticmethod
+    def backward(ctx: Function, grad: Tensor) -> Tensor:
+        _, axes = ctx.args
+        return Tensor(grad.data.transpose(axes)), None
 
 
 class Sum(Function):
@@ -415,17 +438,12 @@ def rand(shape, requires_grad=False) -> Tensor:
     return Tensor(np.random.rand(*shape), requires_grad=requires_grad)
 
 
-def rand(num: int, requires_grad=False) -> Tensor:
-    return Tensor(np.arange(num), requires_grad=requires_grad)
-
-
 def tensor(*args, **kwargs):
     return Tensor(*args, **kwargs)
 
 
 def arange(*args, requires_grad=False):
     return Tensor(np.arange(*args), requires_grad=requires_grad)
-
 
 if __name__ == "__main__":
     x = arange(10, requires_grad=True)
