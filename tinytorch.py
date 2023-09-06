@@ -1,5 +1,6 @@
 from __future__ import annotations
 import math
+from typing import Any
 import numpy as np
 
 
@@ -91,13 +92,18 @@ class Tensor:
     def __len__(self) -> int:
         return len(self.data)
 
+    def __getitem__(self, slice_args):
+        return Slice.apply(self, slice_args)
+
     def reciprocal(self) -> Tensor:
         return Reciprocal.apply(self)
 
     def exp(self) -> Tensor:
         return Exp.apply(self)
 
-    def reshape(self, shape):
+    def reshape(self, *shape) -> Tensor:
+        if isinstance(shape[0],tuple):
+            shape = shape[0]
         curr = math.prod(self.shape)
         target = math.prod((s for s in shape if s != -1))
         shape = tuple(curr // target if s == -1 else s for s in shape)
@@ -109,7 +115,7 @@ class Tensor:
         axes = list(range(num_axes))
         axes[dim1], axes[dim2] = dim2, dim1
         return Transpose.apply(self, axes)
-    
+
     def t(self):
         return self.transpose()
 
@@ -146,7 +152,17 @@ class Tensor:
         shape, new_shape = self._reduce_shape(axis)
         shape = shape if (shape) != () else (1,)
         ret: Tensor = Sum.apply(self, new_shape)
-        return ret if keepdims else ret.reshape(shape=shape)
+        return ret if keepdims else ret.reshape(shape)
+
+    def max(self, axis=None, keepdims=False) -> Tensor:
+        shape, new_shape = self._reduce_shape(axis)
+        shape = shape if (shape) != () else (1,)
+        ret: Tensor = Max.apply(self, new_shape)
+        return ret if keepdims else ret.reshape(shape)
+
+    def mean(x: Tensor, axis=None, keepdim=False):
+        out = x.sum(axis=axis, keepdims=keepdim)
+        return out * (math.prod(out.shape) / math.prod(x.shape))
 
     def zero_(self):
         self.data = np.zeros_like(self.data)
@@ -161,10 +177,15 @@ class Tensor:
     def numpy(self):
         return self.data.copy()
 
+    def item(self):
+        if self.size != 1:
+            raise RuntimeError("item can not be called on non 1 tensor")
+        return self.data.sum()
+
     def _undo_broadcast(self, tensor: Tensor, grad: Tensor):
         data = tensor.data
         grad = grad.data
-        while data.shape != grad.shape:
+        while len(data.shape) != len(grad.shape):
             grad = grad.sum(axis=0, keepdims=(len(grad.shape) == 1))
         return Tensor(grad)
 
@@ -188,6 +209,12 @@ class Tensor:
         for tensor, grad in zip(child_nodes, grads):
             if grad is None:
                 continue
+            # print(f"{self._ctx.op.__name__} {self.shape=} {tensor.shape=} {grad.shape=}")
+            # try:
+            #     for t in self._ctx.args:
+            #         print(f"{t.shape=}")
+            # except:
+            #     pass
             grad = self._undo_broadcast(tensor, grad)
             if tensor.grad is None:
                 tensor.grad = Tensor(np.zeros_like(tensor.data))
@@ -251,6 +278,8 @@ class Sub(Function):
 class Mul(Function):
     @staticmethod
     def forward(x, y):
+        if (5, 7, 1) in (x.shape,y.shape):
+            print("stop")
         return Tensor(x.data * y.data)  # z = x*y
 
     @staticmethod
@@ -273,13 +302,20 @@ class Reciprocal(Function):
 class MatMul(Function):
     @staticmethod
     def forward(x, y):
-        return Tensor(np.matmul(x.data, y.data))
+        return Tensor(x.data @ y.data)
 
     @staticmethod
     def backward(ctx, grad):
         x, y = ctx.args
-        grad_x = np.matmul(grad.data, y.data.T)
-        grad_y = np.matmul(x.data.T, grad.data)
+        def transpose_last_axis(x:np.ndarray):
+            dim1 , dim2 = -2,-1
+            num_axes = len(x.shape)
+            dim1, dim2 = (dim1 + num_axes) % num_axes, (dim2 + num_axes) % num_axes
+            axes = list(range(num_axes))
+            axes[dim1], axes[dim2] = dim2, dim1
+            return x.transpose(axes)
+        grad_x = np.matmul(grad.data, transpose_last_axis(y.data))
+        grad_y = transpose_last_axis(x.data) @ grad.data
         return Tensor(grad_x), Tensor(grad_y)
 
 
@@ -316,6 +352,19 @@ class Transpose(Function):
         return Tensor(grad.data.transpose(axes)), None
 
 
+class Slice(Function):
+    @staticmethod
+    def forward(x, slice_args):
+        return Tensor(x.data[slice_args])
+
+    @staticmethod
+    def backward(ctx, grad):
+        x, slice_args = ctx.args
+        grad_x = np.zeros_like(x.data)
+        grad_x[slice_args] = grad.data
+        return Tensor(grad_x), None
+
+
 class Sum(Function):
     def forward(x: Tensor, new_shape: tuple) -> Tensor:
         axis = tuple(
@@ -327,6 +376,41 @@ class Sum(Function):
     def backward(ctx, grad: Tensor) -> Tensor:
         x, _ = ctx.args
         return Tensor(np.broadcast_to(grad.data, x.shape)), None
+
+
+class Max(Function):
+    @staticmethod
+    def forward(x: Tensor, new_shape: tuple) -> Tensor:
+        axis = tuple(
+            idx for idx, (a, b) in enumerate(zip(x.shape, new_shape)) if a != b
+        )
+        max_values = np.max(x.data, axis=axis, keepdims=True)
+        return Tensor(max_values)
+
+    @staticmethod
+    def backward(ctx: Function, grad: Tensor) -> Tensor:
+        x, new_shape = ctx.args
+        max_values = Max.forward(x, new_shape).data
+        axis = tuple(
+            idx for idx, (a, b) in enumerate(zip(x.shape, grad.shape)) if a != b
+        )
+
+        # Create a mask where the max values are
+        max_mask = (x.data == np.broadcast_to(max_values, x.shape)).astype(int)
+
+        # Count the number of max values along the axis
+        count_max = np.sum(max_mask, axis=axis, keepdims=True)
+
+        # Normalize the mask by the number of max values along the axis
+        normalized_mask = max_mask / np.broadcast_to(count_max, x.shape)
+
+        # Broadcast grad to the shape of x
+        grad_broadcasted = np.broadcast_to(grad.data, x.shape)
+
+        # Compute the gradient
+        grad_x = normalized_mask * grad_broadcasted
+
+        return Tensor(grad_x), None
 
 
 class Power(Function):
@@ -380,7 +464,7 @@ class CrossEntropy(Function):
     @staticmethod
     def forward(y_pred: Tensor, y_true: Tensor) -> Tensor:
         exps = np.exp(y_pred.data - np.max(y_pred.data, axis=1, keepdims=True))
-        probs = exps / np.sum(exps, axis=1, keepdims=True)
+        probs = exps / np.sum(exps, axis=1, keepdims=True)+ 1e-22
         log_likelihood = -np.log(
             probs[np.arange(len(y_true.data)), y_true.data.astype(int)]
         )
@@ -389,13 +473,38 @@ class CrossEntropy(Function):
     @staticmethod
     def backward(ctx: Function, grad: Tensor) -> list[Tensor]:
         y_pred, y_true = ctx.args
-        exps = np.exp(y_pred.data - np.max(y_pred.data, axis=1, keepdims=True))
+        exps = np.exp(y_pred.data - np.max(y_pred.data, axis=1, keepdims=True)) + 1e-22
         probs = exps / np.sum(exps, axis=1, keepdims=True)
         d_loss = np.zeros_like(probs)
         d_loss[np.arange(len(y_true.data)), y_true.data.astype(int)] -= 1
         d_loss += probs
         d_loss /= len(y_true.data)
         return [Tensor(d_loss) * grad, None]
+
+
+class Stack(Function):
+    @staticmethod
+    def forward(*args):
+        *tensors, axis = args
+        data = [t.data for t in tensors]
+        stacked_data = np.stack(data, axis=axis)
+        return Tensor(stacked_data)
+
+    @staticmethod
+    def backward(ctx: Function, grad: Tensor):
+        *tensors, axis = ctx.args
+        grad_data = grad.data
+        grads = np.split(grad_data, grad_data.shape[axis], axis=axis)
+        return tuple([*[Tensor(g) for g in grads], None])
+
+
+def stack(tensors: list[Tensor], axis: int = 0) -> Tensor:
+    return Stack.apply(*tensors, axis)
+
+
+def dropout(x: Tensor, p: int):
+    mask = Tensor(np.random.choice([0, 1], size=x.shape, p=[1 - p, p]))
+    return x * mask
 
 
 def cross_entropy(y_pred: Tensor, y_true: Tensor) -> Tensor:
@@ -414,12 +523,21 @@ def relu(x) -> Tensor:
     return ReLU.apply(x)
 
 
+def sigmoid(x):
+    return 1 / (1 + exp(-1 * x))
+
+
 def sin(x) -> Tensor:
     return Sin.apply(x)
 
 
 def cos(x) -> Tensor:
     return sin(x + np.pi)
+
+
+def mean(x: Tensor, axis=None, keepdims=False):
+    out = x.sum(axis=axis, keepdims=keepdims)
+    return out * (math.prod(out.shape) / math.prod(x.shape))
 
 
 def mse_loss(y_pred: Tensor, y_true: Tensor) -> Tensor:
@@ -445,7 +563,141 @@ def tensor(*args, **kwargs):
 def arange(*args, requires_grad=False):
     return Tensor(np.arange(*args), requires_grad=requires_grad)
 
+
+class Parameter(Tensor):
+    def __init__(self, tensor):
+        super().__init__(tensor, requires_grad=True)
+
+
+class Module:
+    def __call__(self, *args: Any, **kwargs: Any) -> Tensor | Any:
+        return self.forward(*args, **kwargs)
+
+    def parameters(self):
+        params = []
+        for key, value in self.__dict__.items():
+            if isinstance(value, Parameter):
+                params.append(value)
+            if isinstance(value, Module):
+                params.extend(value.parameters())
+            if isinstance(value, ModuleList):
+                for module in value:
+                    params.extend(module.parameters())
+        return params
+
+    def state_dict(self):
+        state = {}
+        for key, value in self.__dict__.items():
+            if isinstance(value, Parameter):
+                state[key] = value.data
+            if isinstance(value, Module):
+                state[key] = value.state_dict()
+            if isinstance(value, list):  # Assuming ModuleList is a list for this demo
+                state[key] = [module.state_dict() for module in value]
+        return state
+
+    def load_state_dict(self, state_dict):
+        for key, value in state_dict.items():
+            attr = getattr(self, key, None)
+            if attr is None:
+                raise KeyError(f"Key {key} not found in module's state.")
+            if isinstance(attr, Parameter):
+                attr.data = value
+            elif isinstance(attr, Module):
+                attr.load_state_dict(value)
+            elif isinstance(attr, list):  # Assuming ModuleList 
+                for param, state in zip(attr, value):
+                    param.load_state_dict(state)
+
+    def forward(self, *args, **kwargs):
+        raise NotImplemented
+
+
+class Linear(Module):
+    def __init__(self, in_features: int, out_features: int, bias: bool = True):
+        self.in_features = in_features
+        self.out_features = out_features
+
+        self.weight = Parameter(
+            rand((out_features, in_features)) / math.sqrt(in_features)
+        )
+        self.bias = Parameter(zeros(out_features)) if bias else None
+
+    def forward(self, x):
+        x = x @ self.weight.t()
+        if self.bias:
+            x = x + self.bias
+        return x
+
+
+class ModuleList(Module, list):
+    def __init__(self, modules=None):
+        super().__init__()
+        if modules is not None:
+            self += modules
+
+    def append(self, module: Module):
+        super().append(module)
+
+    def __setitem__(self, i: int, module: Module):
+        return super().__setitem__(i, module)
+
+    def parameters(self):
+        params = []
+        for module in self:
+            params.extend(module.parameters())
+        return params
+
+
+class Optimizer:
+    def __init__(self, params: list[Tensor], lr: int) -> None:
+        self.params = params
+        self.lr = lr
+
+    def step(self):
+        raise NotImplementedError
+
+    def zero_grad(self):
+        for params in self.params:
+            params.grad = zeros(params.shape)
+
+
+class SGD(Optimizer):
+    def __init__(self, params: list[Tensor], lr: int) -> None:
+        super().__init__(params, lr)
+
+    def step(self):
+        for param in self.params:
+            param.data -= param.grad.data * self.lr
+
+
+class Adam(Optimizer):
+    def __init__(self, params, lr=0.001, betas=(0.9, 0.999), eps=1e-8):
+        super().__init__(params, lr)
+        self.betas = betas
+        self.eps = eps
+        self.t = 0
+        self.m = [np.zeros_like(param.data) for param in self.params]
+        self.v = [np.zeros_like(param.data) for param in self.params]
+
+    def step(self):
+        self.t += 1
+        for i, param in enumerate(self.params):
+            if param.grad is None:
+                continue
+
+            grad = param.grad.data
+
+            self.m[i] = self.betas[0] * self.m[i] + (1.0 - self.betas[0]) * grad
+            self.v[i] = self.betas[1] * self.v[i] + (1.0 - self.betas[1]) * grad**2
+
+            m_hat = self.m[i] / (1.0 - self.betas[0] ** self.t)
+            v_hat = self.v[i] / (1.0 - self.betas[1] ** self.t)
+
+            param.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
+
+
 if __name__ == "__main__":
-    x = arange(10, requires_grad=True)
-    x.sum().backward()
-    print(x.grad)
+    x = arange(10)
+    z = x[1:4]
+    print(z)

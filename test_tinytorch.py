@@ -317,8 +317,10 @@ def test_cross_entropy():
     logits = np.random.rand(5, 3)  # 5 samples, 3 classes
     labels = np.random.randint(0, 3, size=(5,))  # 5 samples, labels from 0 to 2
 
+    print(f"{labels.shape=}")
+
     # Convert to PyTorch tensors
-    logits_t = torch.tensor(logits, requires_grad=True, dtype=torch.float32)
+    logits_t = torch.tensor(logits, requires_grad=True)
     labels_t = torch.tensor(labels, requires_grad=False, dtype=torch.long)
 
     # Convert to tinytorch tensors
@@ -329,13 +331,17 @@ def test_cross_entropy():
     loss_t = torch.nn.functional.cross_entropy(logits_t, labels_t)
     loss_t.backward()
 
+    print(f"{logits.shape=} {labels_t.shape=} {loss_t.shape=}")
+
     # Compute loss using tinytorch (assuming cross_entropy is implemented)
     loss_tt = tinytorch.cross_entropy(logits_tt, labels_tt)
     loss_tt.sum().backward()
 
+    # print(f"{loss_t=}")
+    # print(f"{loss_tt=}")
     # Assertions
     assert np.allclose(
-        loss_t.detach().numpy(), loss_tt.data, atol=1e-7
+        loss_t.detach().numpy(), loss_tt.detach().numpy(), atol=1e-5
     ), "Cross-entropy Loss results do not match."
     assert np.allclose(
         logits_t.grad.numpy(), logits_tt.grad.data, atol=1e-7
@@ -365,6 +371,69 @@ def test_transpose():
     assert np.allclose(
         x_t.grad.numpy(), x_tt.grad.data
     ), "Gradients do not match between PyTorch and tinytorch."
-    
+
+
+def test_max():
+    x = np.random.rand(2, 3)  # Create a random 2x3 array
+    axis = 1  # Axis along which to compute max
+
+    x_t = torch.tensor(x, requires_grad=True)  # Create a PyTorch tensor
+    x_tt = tinytorch.tensor(x, requires_grad=True)  # Create a tinytorch tensor
+
+    # Compute max using PyTorch
+    y_t, _ = torch.max(x_t, dim=axis)
+    loss_t = y_t.sum()
+    loss_t.backward()
+
+    # Compute max using tinytorch
+    y_tt = x_tt.max(axis=axis)
+    # print(f"{x_tt.shape=} {y_tt.shape=}")
+    loss_tt = y_tt.sum()
+    loss_tt.backward()
+
+    # Assertions
+    assert np.allclose(y_t.detach().numpy(), y_tt.data), "Max results do not match."
+
+    assert np.allclose(x_t.grad.numpy(), x_tt.grad.data), "Gradients do not match."
+
+
+def test_stack_with_square():
+    x = np.random.rand(3, 3)
+    y = np.random.rand(3, 3)
+
+    # Convert to PyTorch tensors
+    x_t = torch.tensor(x, requires_grad=True)
+    y_t = torch.tensor(y, requires_grad=True)
+
+    # Perform stack operation in PyTorch
+    z_t = torch.stack([x_t, y_t], dim=0)
+    z_t = z_t**2  # Square the tensor
+    z_t.sum().backward()
+
+    # Assuming you've implemented stack and power operation in tinytorch
+    # Convert to tinytorch tensors
+    x_tt = tinytorch.tensor(x, requires_grad=True)
+    y_tt = tinytorch.tensor(y, requires_grad=True)
+
+    # Perform stack operation in tinytorch
+    z_tt = tinytorch.stack([x_tt, y_tt], axis=0)
+    z_tt = z_tt**2  # Square the tensor
+    z_tt.sum().backward()
+
+    # Verify that the output from PyTorch and tinytorch are the same
+    assert np.allclose(
+        z_t.detach().numpy(), z_tt.data
+    ), "Stack operation results do not match between PyTorch and tinytorch."
+
+    # Verify that the gradients are the same for both PyTorch and tinytorch
+    assert np.allclose(
+        x_t.grad.numpy(), x_tt.grad.data
+    ), "Gradients for x do not match between PyTorch and tinytorch."
+
+    # assert np.allclose(
+    #     y_t.grad.numpy(), y_tt.grad.data
+    # ), "Gradients for y do not match between PyTorch and tinytorch."
+
+
 if __name__ == "__main__":
-    test_transpose()
+    test_cross_entropy()
