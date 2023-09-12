@@ -102,7 +102,7 @@ class Tensor:
         return Exp.apply(self)
 
     def reshape(self, *shape) -> Tensor:
-        if isinstance(shape[0],tuple):
+        if isinstance(shape[0], tuple):
             shape = shape[0]
         curr = math.prod(self.shape)
         target = math.prod((s for s in shape if s != -1))
@@ -118,6 +118,16 @@ class Tensor:
 
     def t(self):
         return self.transpose()
+
+    def float(self):
+        self.data = self.data.astype(np.float32)
+        return self
+
+    def to(self, device):
+        self.device = device
+
+    def tolist(self):
+        return self.data.tolist()
 
     @property
     def shape(self) -> tuple:
@@ -185,6 +195,7 @@ class Tensor:
     def _undo_broadcast(self, tensor: Tensor, grad: Tensor):
         data = tensor.data
         grad = grad.data
+        # print(f"{data.shape= },{grad.shape=}")
         while len(data.shape) != len(grad.shape):
             grad = grad.sum(axis=0, keepdims=(len(grad.shape) == 1))
         return Tensor(grad)
@@ -192,6 +203,7 @@ class Tensor:
     def backward(self, grad=None):
         if self._ctx is None:
             return
+        # print(f"Root: {self.shape= } {self._ctx.op.__name__}")
 
         if grad is None:
             if self.size != 1:
@@ -278,8 +290,6 @@ class Sub(Function):
 class Mul(Function):
     @staticmethod
     def forward(x, y):
-        if (5, 7, 1) in (x.shape,y.shape):
-            print("stop")
         return Tensor(x.data * y.data)  # z = x*y
 
     @staticmethod
@@ -307,13 +317,15 @@ class MatMul(Function):
     @staticmethod
     def backward(ctx, grad):
         x, y = ctx.args
-        def transpose_last_axis(x:np.ndarray):
-            dim1 , dim2 = -2,-1
+
+        def transpose_last_axis(x: np.ndarray):
+            dim1, dim2 = -2, -1
             num_axes = len(x.shape)
             dim1, dim2 = (dim1 + num_axes) % num_axes, (dim2 + num_axes) % num_axes
             axes = list(range(num_axes))
             axes[dim1], axes[dim2] = dim2, dim1
             return x.transpose(axes)
+
         grad_x = np.matmul(grad.data, transpose_last_axis(y.data))
         grad_y = transpose_last_axis(x.data) @ grad.data
         return Tensor(grad_x), Tensor(grad_y)
@@ -373,7 +385,7 @@ class Sum(Function):
         x = x.data.sum(axis, keepdims=True)
         return Tensor(x)
 
-    def backward(ctx, grad: Tensor) -> Tensor:
+    def backward(ctx: Function, grad: Tensor) -> tuple[Tensor | None]:
         x, _ = ctx.args
         return Tensor(np.broadcast_to(grad.data, x.shape)), None
 
@@ -402,7 +414,7 @@ class Max(Function):
         count_max = np.sum(max_mask, axis=axis, keepdims=True)
 
         # Normalize the mask by the number of max values along the axis
-        normalized_mask = max_mask / np.broadcast_to(count_max, x.shape)
+        normalized_mask = max_mask / (np.broadcast_to(count_max, x.shape) + 1e-20)
 
         # Broadcast grad to the shape of x
         grad_broadcasted = np.broadcast_to(grad.data, x.shape)
@@ -464,7 +476,7 @@ class CrossEntropy(Function):
     @staticmethod
     def forward(y_pred: Tensor, y_true: Tensor) -> Tensor:
         exps = np.exp(y_pred.data - np.max(y_pred.data, axis=1, keepdims=True))
-        probs = exps / np.sum(exps, axis=1, keepdims=True)+ 1e-22
+        probs = exps / np.sum(exps, axis=1, keepdims=True) + 1e-22
         log_likelihood = -np.log(
             probs[np.arange(len(y_true.data)), y_true.data.astype(int)]
         )
@@ -523,8 +535,13 @@ def relu(x) -> Tensor:
     return ReLU.apply(x)
 
 
-def sigmoid(x):
+def sigmoid(x) -> Tensor:
     return 1 / (1 + exp(-1 * x))
+
+
+def softmax(x: Tensor, dim: int = 0) -> Tensor:
+    e_x = exp(x - x.max(axis=dim, keepdims=True))
+    return e_x / e_x.sum(axis=dim, keepdims=True)
 
 
 def sin(x) -> Tensor:
@@ -552,7 +569,9 @@ def zeros(shape, requires_grad=False) -> Tensor:
     return Tensor(np.zeros(shape), requires_grad=requires_grad)
 
 
-def rand(shape, requires_grad=False) -> Tensor:
+def rand(*shape, requires_grad=False) -> Tensor:
+    if isinstance(shape[0], tuple):
+        shape = shape[0]
     return Tensor(np.random.rand(*shape), requires_grad=requires_grad)
 
 
@@ -564,6 +583,11 @@ def arange(*args, requires_grad=False):
     return Tensor(np.arange(*args), requires_grad=requires_grad)
 
 
+class Device:
+    def __init__(self, name: str = "cpu"):
+        self.name = name
+
+
 class Parameter(Tensor):
     def __init__(self, tensor):
         super().__init__(tensor, requires_grad=True)
@@ -573,7 +597,7 @@ class Module:
     def __call__(self, *args: Any, **kwargs: Any) -> Tensor | Any:
         return self.forward(*args, **kwargs)
 
-    def parameters(self):
+    def parameters(self) -> list[Parameter]:
         params = []
         for key, value in self.__dict__.items():
             if isinstance(value, Parameter):
@@ -605,7 +629,7 @@ class Module:
                 attr.data = value
             elif isinstance(attr, Module):
                 attr.load_state_dict(value)
-            elif isinstance(attr, list):  # Assuming ModuleList 
+            elif isinstance(attr, list):  # Assuming ModuleList
                 for param, state in zip(attr, value):
                     param.load_state_dict(state)
 
@@ -687,13 +711,10 @@ class Adam(Optimizer):
                 continue
 
             grad = param.grad.data
-
             self.m[i] = self.betas[0] * self.m[i] + (1.0 - self.betas[0]) * grad
             self.v[i] = self.betas[1] * self.v[i] + (1.0 - self.betas[1]) * grad**2
-
             m_hat = self.m[i] / (1.0 - self.betas[0] ** self.t)
             v_hat = self.v[i] / (1.0 - self.betas[1] ** self.t)
-
             param.data -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
 
 

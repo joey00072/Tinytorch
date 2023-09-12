@@ -430,10 +430,26 @@ def test_stack_with_square():
         x_t.grad.numpy(), x_tt.grad.data
     ), "Gradients for x do not match between PyTorch and tinytorch."
 
-    # assert np.allclose(
-    #     y_t.grad.numpy(), y_tt.grad.data
-    # ), "Gradients for y do not match between PyTorch and tinytorch."
+    assert np.allclose(
+        y_t.grad.numpy(), y_tt.grad.data
+    ), "Gradients for y do not match between PyTorch and tinytorch."
+
+
+def test_sigmoid():
+    x = np.random.rand(3, 3)
+
+    x_t = torch.tensor(x, requires_grad=True)
+    x_tt = tinytorch.tensor(x, requires_grad=True)
+
+    z_t = torch.sigmoid(x_t)
+    z_t.sum().backward()
+
+    z_tt = tinytorch.sigmoid(x_tt)
+    z_tt.sum().backward()
+
+    assert np.allclose(z_t.detach().numpy(), z_tt.data), "Sigmoid results do not match."
+    assert np.allclose(x_t.grad.numpy(), x_tt.grad.data), "Gradients do not match."
 
 
 if __name__ == "__main__":
-    test_cross_entropy()
+    test_softmax()

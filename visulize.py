@@ -1,5 +1,6 @@
 import graphviz
-import matplotlib.pyplot as plt
+
+# import matplotlib.pyplot as plt
 from tinytorch import *
 
 G = graphviz.Digraph(format="png")
@@ -7,10 +8,14 @@ G.clear()
 
 
 def visit_nodes(G: graphviz.Digraph, node: Tensor):
+    if not isinstance(node, Tensor):
+        return
     uid = str(id(node))
+    node_name = f"Tensor: ({str(node.data.shape) }) "
+    print(type(node))
     G.node(
         uid,
-        f"Tensor: ({str(node.data) }  { 'grad: '+str(node.grad.data) if node.grad is not None else ''}) ",
+        node_name,
     )
     if node._ctx:
         ctx_uid = str(id(node._ctx))
