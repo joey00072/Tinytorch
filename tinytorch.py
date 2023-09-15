@@ -5,6 +5,8 @@ import numpy as np
 
 
 class Tensor:
+    __slots__ = ("data", "grad", "_ctx", "requires_grad")
+
     def __init__(self, data, requires_grad=False):
         self.data: np.ndarray = Tensor._data_to_numpy(data)
         self.grad: Tensor = None
@@ -24,7 +26,7 @@ class Tensor:
         raise ValueError("Invalid value passed to tensor")
 
     def __repr__(self) -> str:
-        s = f"{self.data} "
+        s = f"{np.round(self.data,4)} "
         if self.requires_grad:
             s += f" requires_grad={self.requires_grad}"
         if self._ctx is not None:
@@ -168,7 +170,7 @@ class Tensor:
         shape, new_shape = self._reduce_shape(axis)
         shape = shape if (shape) != () else (1,)
         ret: Tensor = Max.apply(self, new_shape)
-        return ret if keepdims else ret.reshape(shape)
+        return ret if keepdims else ret.reshape(shape), None
 
     def mean(x: Tensor, axis=None, keepdim=False):
         out = x.sum(axis=axis, keepdims=keepdim)
@@ -195,9 +197,14 @@ class Tensor:
     def _undo_broadcast(self, tensor: Tensor, grad: Tensor):
         data = tensor.data
         grad = grad.data
-        # print(f"{data.shape= },{grad.shape=}")
+
         while len(data.shape) != len(grad.shape):
             grad = grad.sum(axis=0, keepdims=(len(grad.shape) == 1))
+
+        for idx, (s1, s2) in enumerate(zip(data.shape, grad.shape)):
+            if s1 < s2:
+                grad = grad.sum(axis=idx, keepdims=True)
+
         return Tensor(grad)
 
     def backward(self, grad=None):
@@ -540,7 +547,8 @@ def sigmoid(x) -> Tensor:
 
 
 def softmax(x: Tensor, dim: int = 0) -> Tensor:
-    e_x = exp(x - x.max(axis=dim, keepdims=True))
+    m, _ = x.max(axis=dim, keepdims=True)
+    e_x = (x - m).exp()
     return e_x / e_x.sum(axis=dim, keepdims=True)
 
 
@@ -575,8 +583,8 @@ def rand(*shape, requires_grad=False) -> Tensor:
     return Tensor(np.random.rand(*shape), requires_grad=requires_grad)
 
 
-def tensor(*args, **kwargs):
-    return Tensor(*args, **kwargs)
+def tensor(data, requires_grad=False):
+    return Tensor(data, requires_grad)
 
 
 def arange(*args, requires_grad=False):

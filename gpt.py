@@ -10,8 +10,6 @@ import numpy as np
 import random
 import math
 
-from visulize import *
-
 # np.random.seed(0)
 # curl -LO https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
 
@@ -106,19 +104,24 @@ class MHA(nn.Module):
         k = k.reshape(B, T, self.n_heads, C // self.n_heads)
         q = q.reshape(B, T, self.n_heads, C // self.n_heads)
         v = v.reshape(B, T, self.n_heads, C // self.n_heads)
+        print(f"{k.shape=}")
 
         k = k.transpose(1, 2)
         q = q.transpose(1, 2)
         v = v.transpose(1, 2)
 
         wei = (q @ k.transpose(-1, -2)) / (self.head_dim**0.5)
+
         wei = self.mask[:, :, :T, :T] + wei
+
         wei = F.softmax(wei, dim=-1)
+        print(wei[0][0])
 
         v = wei @ v
         v = v.transpose(1, 2).reshape(B, T, C)
 
         x = self.proj(v)
+        raise RuntimeError("STOP")
         return x
 
 
@@ -264,7 +267,7 @@ def train(model, optimizer: optim.Optimizer, dataset: TextDataset, num_iteration
 
         print(f"Iteration [{iteration + 1}/{num_iterations}], Loss: {loss.item()}")
 
-        if iteration % 10 == 0:
+        if iteration % 1000 == 0:
             generate(tokenizer, model)
         iteration += 1
         if iteration >= num_iterations:
@@ -277,7 +280,7 @@ def train(model, optimizer: optim.Optimizer, dataset: TextDataset, num_iteration
 # Define some hyperparameters
 learning_rate = 3e-3
 batch_size = 3
-seq_len = 10
+seq_len = 5
 d_model = 64
 n_heads = 2
 num_layers = 2
@@ -285,8 +288,6 @@ num_layers = 2
 tokenizer = Tokenizer("input.txt")
 train_data, val_data = tokenizer.train_val_split()
 
-batch_size = 8
-seq_len = 10
 
 train_dataset = TextDataset(train_data, batch_size, seq_len)
 val_dataset = TextDataset(val_data, batch_size, seq_len)
