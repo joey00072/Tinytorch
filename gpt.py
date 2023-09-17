@@ -3,10 +3,10 @@ import tinytorch as nn
 import tinytorch as optim
 import tinytorch as F
 
-# import torch
-# import torch.nn as nn
-# import torch.nn.functional as F 
-# import torch.optim as optim 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F 
+import torch.optim as optim 
 
 from dataclasses import dataclass
 import numpy as np
@@ -14,12 +14,12 @@ import math
 import numpy
 
 # hyperparameters
-batch_size = 32  
+batch_size = 64  
 block_size = 128 
 max_iters = 5000
 eval_interval = 500
 learning_rate = 3e-4
-device = "mps"  #'cuda' if torch.cuda.is_available() else 'cpu'
+device = "cpu" #"cuda" if torch.cuda.is_available() else "cpu"
 eval_iters = 200
 n_embd = 128
 n_head = 4
@@ -285,7 +285,9 @@ for iter in range(1, max_iters):
 
     optimizer.step()
     optimizer.zero_grad()
-    print(iter)
+    
+    if iter%10==0: 
+        print(iter)
 
 context = torch.zeros((1, 1)).to(device).long()
 print(tokenizer.decode(m.generate(context, max_new_tokens=500)[0].tolist()))

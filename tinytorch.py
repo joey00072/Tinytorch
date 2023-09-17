@@ -1,9 +1,14 @@
 from __future__ import annotations
+
+import os
 import math
-from typing import Any
 import numpy as np
 
-
+JAX = (os.environ.get("GPU") in ["1"]) or (os.environ.get("JAX") in ["1"]) 
+if JAX:
+    import jax
+    import jax.numpy as np
+    
 class Tensor:
     __slots__ = ("data", "grad", "_ctx", "requires_grad","device")
 
@@ -23,6 +28,8 @@ class Tensor:
             return data
         if isinstance(data, Tensor):
             return data.data.copy()
+        if JAX:
+            return np.array(data)
         raise ValueError("Invalid value passed to tensor")
 
     def __repr__(self) -> str:
@@ -390,7 +397,10 @@ class Slice(Function):
         if isinstance(slice_args,Tensor):
             slice_args = slice_args.data
         grad_x = np.zeros_like(x.data)
-        grad_x[slice_args] = grad.data
+        if JAX:
+            grad_x.at[slice_args].set(grad.data)
+        else:
+            grad_x[slice_args] = grad.data
         return Tensor(grad_x), None
 
 
@@ -505,7 +515,10 @@ class CrossEntropy(Function):
         exps = np.exp(y_pred.data - np.max(y_pred.data, axis=1, keepdims=True)) + 1e-22
         probs = exps / np.sum(exps, axis=1, keepdims=True)
         d_loss = np.zeros_like(probs)
-        d_loss[np.arange(len(y_true.data)), y_true.data.astype(int)] -= 1
+        if JAX:
+            d_loss.at[np.arange(len(y_true.data)), y_true.data.astype(int)].set(d_loss[np.arange(len(y_true.data)), y_true.data.astype(int)]-1)
+        else:
+            d_loss[np.arange(len(y_true.data)), y_true.data.astype(int)] -= 1
         d_loss += probs
         d_loss /= len(y_true.data)
         return [Tensor(d_loss) * grad, None]
@@ -579,8 +592,7 @@ def cross_entropy(y_pred: Tensor, y_true: Tensor) -> Tensor:
     return CrossEntropy.apply(y_pred, y_true)
 
 
-def exp(x) -> Tensor:
-    return Exp.apply(x)
+def exp(x) -> Tensor: return Exp.apply(x)
 
 
 def tanh(x) -> Tensor:
@@ -629,7 +641,11 @@ def zeros(shape, requires_grad=False) -> Tensor:
 def rand(*shape, requires_grad=False) -> Tensor:
     if isinstance(shape[0], tuple):
         shape = shape[0]
-    return Tensor(np.random.rand(*shape), requires_grad=requires_grad)
+    if JAX:
+        arr = jax.random.uniform(jax.random.key(69),shape)
+    else:
+        arr = np.random.rand(*shape)
+    return Tensor(arr, requires_grad=requires_grad)
 
 
 def tensor(data, requires_grad=False):
@@ -651,7 +667,7 @@ class Parameter(Tensor):
 
 
 class Module:
-    def __call__(self, *args: Any, **kwargs: Any) -> Tensor | Any:
+    def __call__(self, *args, **kwargs) -> Tensor:
         return self.forward(*args, **kwargs)
 
     def parameters(self) -> list[Parameter]:
@@ -667,15 +683,24 @@ class Module:
         return list(set(params))
 
     def state_dict(self):
-        state = {}
-        for key, value in self.__dict__.items():
-            if isinstance(value, Parameter):
-                state[key] = value.data
-            if isinstance(value, Module):
-                state[key] = value.state_dict()
-            if isinstance(value, list):  # Assuming ModuleList is a list for this demo
-                state[key] = [module.state_dict() for module in value]
-        return state
+        def absorb_dict(root:dict,d:dict):
+            for k,v in d.items():
+                root[k]=v
+        def _get_params(root:Module,prefix=""):
+            d = {}
+            for k,v in root.__dict__.items():
+                print(k)
+                if isinstance(v,Parameter):
+                    key = f"{prefix}.{k}" if prefix!="" else f"{k}"
+                    d[key]=v.clone()
+                elif isinstance(v,ModuleList):
+                    ds = [_get_params(m,f"{prefix}.{k}.{idx}" if prefix!="" else f"{k}.{idx}") for idx,m in enumerate(v)]
+                    for x in ds:
+                        absorb_dict(d,x)
+                elif isinstance(v,Module):
+                    absorb_dict(d,_get_params(v,f"{prefix}.{k}" if prefix!="" else f"{k}"))
+            return d
+        return _get_params(self)
 
     def load_state_dict(self, state_dict):
         for key, value in state_dict.items():
