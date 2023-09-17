@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import math
+import time
 import numpy as np
 
 JAX = (os.environ.get("GPU") in ["1"]) or (os.environ.get("JAX") in ["1"])
@@ -570,6 +571,10 @@ class Cat(Function):
 def multinomial(
     tensor: Tensor, num_samples: int = 1, replacement: bool = False
 ) -> Tensor:
+    import numpy
+    tensor = tensor.clone()
+    if JAX: # I have to do this ugly shit because jax dont support multinomial
+        tensor.data = numpy.array(np.asarray(tensor.data).tolist())
     # Check for at least 2D tensor (Batch x Classes)
     if tensor.data.ndim < 2:
         raise ValueError("Multinomial only supported for at least 2D tensors.")
@@ -577,21 +582,11 @@ def multinomial(
     # Initialize an empty list to hold batch indices
     batch_indices = []
 
-    def jax_multinomial(logits, num_samples):
-        # cause jax fkin dosen't have multinomial
-        key = jax.random.key(69)
-        shape = shape = (num_samples,) + logits.shape[:-1] if num_samples != 1 else None
-        samples = jax.random.categorical(key, logits, shape=shape)
-        return jnp.moveaxis(samples, 0, -1) if num_samples != 1 else samples[..., None]
-
     # Loop over each batch to draw samples
     for batch in tensor.data:
         probs = batch / batch.sum()
-        if JAX:
-            samples = jax_multinomial(num_samples, probs)
-        else:
-            samples = np.random.multinomial(num_samples, probs)
-        indices = np.where(samples > 0)[0]
+        samples = numpy.random.multinomial(num_samples, probs)
+        indices = numpy.where(samples > 0)[0]
 
         if not replacement and len(indices) != num_samples:
             raise ValueError("Cannot draw unique samples, try with replacement=True.")
@@ -669,7 +664,7 @@ def rand(*shape, requires_grad=False) -> Tensor:
     if isinstance(shape[0], tuple):
         shape = shape[0]
     if JAX:
-        arr = jax.random.uniform(jax.random.key(69), shape)
+        arr = jax.random.uniform(jax.random.key(int(time.time())), shape)
     else:
         arr = np.random.rand(*shape)
     return Tensor(arr, requires_grad=requires_grad)

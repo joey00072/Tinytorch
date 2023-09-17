@@ -21,9 +21,9 @@ eval_interval = 500
 learning_rate = 3e-4
 device = "cpu"  # "cuda" if torch.cuda.is_available() else "cpu"
 eval_iters = 200
-n_embd = 128
+n_embd = 128*2
 n_head = 4
-n_layer = 2
+n_layer = 3
 dropout = 0.2
 # ------------
 
@@ -263,6 +263,7 @@ print(sum(math.prod(p.shape) for p in m.parameters()) / 1e6, "M parameters")
 
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
+
 for iter in range(1, max_iters):
     if iter % eval_interval == 0 or iter == max_iters - 1:
         context = torch.zeros((1, 1)).to(device).long()
@@ -286,6 +287,7 @@ for iter in range(1, max_iters):
 
     optimizer.step()
     optimizer.zero_grad()
+    
 
     if iter % 10 == 0:
         print(iter)
