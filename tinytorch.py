@@ -4,13 +4,14 @@ import os
 import math
 import numpy as np
 
-JAX = (os.environ.get("GPU") in ["1"]) or (os.environ.get("JAX") in ["1"]) 
-if JAX:
+JAX = (os.environ.get("GPU") in ["1"]) or (os.environ.get("JAX") in ["1"])
+if JAX:  # just using as faster numpy on GPU
     import jax
     import jax.numpy as np
-    
+
+
 class Tensor:
-    __slots__ = ("data", "grad", "_ctx", "requires_grad","device")
+    __slots__ = ("data", "grad", "_ctx", "requires_grad", "device")
 
     def __init__(self, data, requires_grad=False):
         self.data: np.ndarray = Tensor._data_to_numpy(data)
@@ -103,10 +104,14 @@ class Tensor:
 
     def __getitem__(self, slice_args):
         return Slice.apply(self, slice_args)
-    def __setitem__(self,idx,item):
-        if isinstance(item,Tensor):
+
+    def __setitem__(self, idx, item):
+        if isinstance(item, Tensor):
             item = item.data
-        self.data[idx] = item
+        if JAX:
+            self.data.at[idx].set(item)
+        else:
+            self.data[idx] = item
 
     def reciprocal(self) -> Tensor:
         return Reciprocal.apply(self)
@@ -121,8 +126,8 @@ class Tensor:
         target = math.prod((s for s in shape if s != -1))
         shape = tuple(curr // target if s == -1 else s for s in shape)
         return Reshape.apply(self, shape)
-    
-    def view(self,*args)->Tensor:
+
+    def view(self, *args) -> Tensor:
         return self.reshape(*args)
 
     def transpose(self, dim1=-2, dim2=-1):
@@ -138,6 +143,7 @@ class Tensor:
     def float(self):
         self.data = self.data.astype(np.float32)
         return self
+
     def long(self):
         self.data = self.data.astype(np.int16)
         return self
@@ -253,7 +259,11 @@ class Tensor:
 
 
 class Function:
-    __slots__ = ("op","args",)
+    __slots__ = (
+        "op",
+        "args",
+    )
+
     def __init__(self, op, *args):
         self.op: Function = op
         self.args: list[Tensor] = args
@@ -293,7 +303,7 @@ class Add(Function):
     @staticmethod
     def backward(ctx, grad):
         x, y = ctx.args
-        return Tensor(grad) , Tensor(grad)
+        return Tensor(grad), Tensor(grad)
 
 
 class Sub(Function):
@@ -315,7 +325,7 @@ class Mul(Function):
     @staticmethod
     def backward(ctx, grad):
         x, y = ctx.args
-        return Tensor(y.data * grad.data) , Tensor(x.data * grad.data)   #  dz/dx, dz/dy
+        return Tensor(y.data * grad.data), Tensor(x.data * grad.data)  #  dz/dx, dz/dy
 
 
 class Reciprocal(Function):
@@ -326,7 +336,7 @@ class Reciprocal(Function):
     @staticmethod
     def backward(ctx, grad):
         (x,) = ctx.args
-        return Tensor((-1.0 / (x.data**2))* grad.data) 
+        return Tensor((-1.0 / (x.data**2)) * grad.data)
 
 
 class MatMul(Function):
@@ -359,7 +369,7 @@ class Exp(Function):
     @staticmethod
     def backward(ctx, grad):
         (x,) = ctx.args
-        return Tensor(np.exp(x.data)* grad.data)
+        return Tensor(np.exp(x.data) * grad.data)
 
 
 class Reshape(Function):
@@ -387,14 +397,14 @@ class Transpose(Function):
 class Slice(Function):
     @staticmethod
     def forward(x, slice_args):
-        if isinstance(slice_args,Tensor):
+        if isinstance(slice_args, Tensor):
             slice_args = slice_args.data
         return Tensor(x.data[slice_args])
 
     @staticmethod
     def backward(ctx, grad):
         x, slice_args = ctx.args
-        if isinstance(slice_args,Tensor):
+        if isinstance(slice_args, Tensor):
             slice_args = slice_args.data
         grad_x = np.zeros_like(x.data)
         if JAX:
@@ -516,7 +526,9 @@ class CrossEntropy(Function):
         probs = exps / np.sum(exps, axis=1, keepdims=True)
         d_loss = np.zeros_like(probs)
         if JAX:
-            d_loss.at[np.arange(len(y_true.data)), y_true.data.astype(int)].set(d_loss[np.arange(len(y_true.data)), y_true.data.astype(int)]-1)
+            d_loss.at[np.arange(len(y_true.data)), y_true.data.astype(int)].set(
+                d_loss[np.arange(len(y_true.data)), y_true.data.astype(int)] - 1
+            )
         else:
             d_loss[np.arange(len(y_true.data)), y_true.data.astype(int)] -= 1
         d_loss += probs
@@ -538,7 +550,8 @@ class Stack(Function):
         grad_data = grad.data
         grads = np.split(grad_data, grad_data.shape[axis], axis=axis)
         return tuple([*[Tensor(g) for g in grads], None])
-    
+
+
 class Cat(Function):
     @staticmethod
     def forward(tensors, dim):
@@ -552,10 +565,11 @@ class Cat(Function):
         grad_data = grad.data
         grads = np.split(grad_data, [t.shape[dim] for t in tensors[:-1]], axis=dim)
         return [Tensor(g) for g in grads], None
-    
-    
-    
-def multinomial(tensor: Tensor, num_samples: int = 1, replacement: bool = False) -> Tensor:
+
+
+def multinomial(
+    tensor: Tensor, num_samples: int = 1, replacement: bool = False
+) -> Tensor:
     # Check for at least 2D tensor (Batch x Classes)
     if tensor.data.ndim < 2:
         raise ValueError("Multinomial only supported for at least 2D tensors.")
@@ -563,21 +577,33 @@ def multinomial(tensor: Tensor, num_samples: int = 1, replacement: bool = False)
     # Initialize an empty list to hold batch indices
     batch_indices = []
 
+    def jax_multinomial(logits, num_samples):
+        # cause jax fkin dosen't have multinomial
+        key = jax.random.key(69)
+        shape = shape = (num_samples,) + logits.shape[:-1] if num_samples != 1 else None
+        samples = jax.random.categorical(key, logits, shape=shape)
+        return jnp.moveaxis(samples, 0, -1) if num_samples != 1 else samples[..., None]
+
     # Loop over each batch to draw samples
     for batch in tensor.data:
         probs = batch / batch.sum()
-        samples = np.random.multinomial(num_samples, probs)
+        if JAX:
+            samples = jax_multinomial(num_samples, probs)
+        else:
+            samples = np.random.multinomial(num_samples, probs)
         indices = np.where(samples > 0)[0]
 
         if not replacement and len(indices) != num_samples:
             raise ValueError("Cannot draw unique samples, try with replacement=True.")
-        
+
         batch_indices.append(indices)
 
     return Tensor(np.array(batch_indices))
 
+
 def cat(tensors: list[Tensor], dim: int = 0) -> Tensor:
     return Cat.apply(tensors, dim)
+
 
 def stack(tensors: list[Tensor], axis: int = 0) -> Tensor:
     return Stack.apply(*tensors, axis)
@@ -592,7 +618,8 @@ def cross_entropy(y_pred: Tensor, y_true: Tensor) -> Tensor:
     return CrossEntropy.apply(y_pred, y_true)
 
 
-def exp(x) -> Tensor: return Exp.apply(x)
+def exp(x) -> Tensor:
+    return Exp.apply(x)
 
 
 def tanh(x) -> Tensor:
@@ -642,7 +669,7 @@ def rand(*shape, requires_grad=False) -> Tensor:
     if isinstance(shape[0], tuple):
         shape = shape[0]
     if JAX:
-        arr = jax.random.uniform(jax.random.key(69),shape)
+        arr = jax.random.uniform(jax.random.key(69), shape)
     else:
         arr = np.random.rand(*shape)
     return Tensor(arr, requires_grad=requires_grad)
@@ -683,23 +710,32 @@ class Module:
         return list(set(params))
 
     def state_dict(self):
-        def absorb_dict(root:dict,d:dict):
-            for k,v in d.items():
-                root[k]=v
-        def _get_params(root:Module,prefix=""):
+        def absorb_dict(root: dict, d: dict):
+            for k, v in d.items():
+                root[k] = v
+
+        def _get_params(root: Module, prefix=""):
             d = {}
-            for k,v in root.__dict__.items():
+            for k, v in root.__dict__.items():
                 print(k)
-                if isinstance(v,Parameter):
-                    key = f"{prefix}.{k}" if prefix!="" else f"{k}"
-                    d[key]=v.clone()
-                elif isinstance(v,ModuleList):
-                    ds = [_get_params(m,f"{prefix}.{k}.{idx}" if prefix!="" else f"{k}.{idx}") for idx,m in enumerate(v)]
+                if isinstance(v, Parameter):
+                    key = f"{prefix}.{k}" if prefix != "" else f"{k}"
+                    d[key] = v.clone()
+                elif isinstance(v, ModuleList):
+                    ds = [
+                        _get_params(
+                            m, f"{prefix}.{k}.{idx}" if prefix != "" else f"{k}.{idx}"
+                        )
+                        for idx, m in enumerate(v)
+                    ]
                     for x in ds:
-                        absorb_dict(d,x)
-                elif isinstance(v,Module):
-                    absorb_dict(d,_get_params(v,f"{prefix}.{k}" if prefix!="" else f"{k}"))
+                        absorb_dict(d, x)
+                elif isinstance(v, Module):
+                    absorb_dict(
+                        d, _get_params(v, f"{prefix}.{k}" if prefix != "" else f"{k}")
+                    )
             return d
+
         return _get_params(self)
 
     def load_state_dict(self, state_dict):
@@ -715,16 +751,15 @@ class Module:
                 for param, state in zip(attr, value):
                     param.load_state_dict(state)
 
-    def register_buffer(self,name,value:Tensor):
-        value = value.clone().detach() if isinstance(value,Tensor) else value
-        setattr(self,name,value)
-        
-    def to(self,device):
-        return self # add gpu backend maybe
+    def register_buffer(self, name, value: Tensor):
+        value = value.clone().detach() if isinstance(value, Tensor) else value
+        setattr(self, name, value)
+
+    def to(self, device):
+        return self  # add gpu backend maybe
 
     def forward(self, *args, **kwargs):
         raise NotImplemented
-    
 
 
 class Linear(Module):
@@ -761,7 +796,6 @@ class ModuleList(Module, list):
         for module in self:
             params.extend(module.parameters())
         return params
-    
 
 
 class Optimizer:

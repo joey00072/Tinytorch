@@ -5,8 +5,8 @@ import tinytorch as F
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F 
-import torch.optim as optim 
+import torch.nn.functional as F
+import torch.optim as optim
 
 from dataclasses import dataclass
 import numpy as np
@@ -14,12 +14,12 @@ import math
 import numpy
 
 # hyperparameters
-batch_size = 64  
-block_size = 128 
+batch_size = 64
+block_size = 128
 max_iters = 5000
 eval_interval = 500
 learning_rate = 3e-4
-device = "cpu" #"cuda" if torch.cuda.is_available() else "cpu"
+device = "cpu"  # "cuda" if torch.cuda.is_available() else "cpu"
 eval_iters = 200
 n_embd = 128
 n_head = 4
@@ -30,32 +30,33 @@ dropout = 0.2
 
 # torch.manual_seed(1337)
 
+
 class CharTokenizer:
     def __init__(self, text=None, filepath=None):
-        
         self.text = text
         if filepath:
             with open(filepath, "r", encoding="utf-8") as f:
                 self.text = f.read()
         elif text is None:
             raise ValueError("Either text or filepath must be provided.")
-            
+
         self.chars = sorted(list(set(self.text)))
         self.vocab_size = len(self.chars)
         self.stoi = {ch: i for i, ch in enumerate(self.chars)}
         self.itos = {i: ch for i, ch in enumerate(self.chars)}
-    
+
     def encode(self, s):
         return [self.stoi[c] for c in s]
-    
+
     def decode(self, l):
         return "".join([self.itos[i] for i in l])
-    
+
+
 tokenizer = CharTokenizer(filepath="input.txt")
 
 # Train and test splits
 data = torch.tensor(tokenizer.encode(tokenizer.text)).long()
-n = int(0.95 * len(data))  
+n = int(0.95 * len(data))
 train_data = data[:n]
 val_data = data[n:]
 
@@ -88,7 +89,7 @@ class Embedding(nn.Module):
         self.weight = nn.Parameter(
             torch.rand((num_embeddings, embedding_dim)) / embedding_dim
         )
-        
+
     def forward(self, x: torch.Tensor):
         return self.weight[x]
 
@@ -209,23 +210,21 @@ class Block(nn.Module):
 
 
 class GPT(nn.Module):
-    def __init__(self, model_args:ModelArgs):
+    def __init__(self, model_args: ModelArgs):
         super().__init__()
-        
+
         self.token_embedding = Embedding(model_args.vocab_size, model_args.d_model)
         self.position_embedding = Embedding(model_args.seq_len, model_args.d_model)
-        
+
         self.layers = nn.ModuleList(
-                    [
-                        Block(model_args) for _ in range(model_args.num_layers)
-                    ]
-            )
+            [Block(model_args) for _ in range(model_args.num_layers)]
+        )
         self.norm = RMSNorm(model_args.d_model)
         self.proj = nn.Linear(model_args.d_model, model_args.vocab_size)
 
     def forward(self, x):
         B, T = x.shape
-        
+
         tok_emb = self.token_embedding(x)
         pos_emb = self.position_embedding(torch.arange(T).to(device))
         x = tok_emb + pos_emb
@@ -269,12 +268,14 @@ for iter in range(1, max_iters):
         context = torch.zeros((1, 1)).to(device).long()
         print(tokenizer.decode(m.generate(context, max_new_tokens=500)[0].tolist()))
         losses = estimate_loss()
-        print(f"step {iter}: train loss {losses['train'].item():.4f}, val loss {losses['val'].item():.4f}")
+        print(
+            f"step {iter}: train loss {losses['train'].item():.4f}, val loss {losses['val'].item():.4f}"
+        )
         optimizer.zero_grad()
 
     data, targets = get_batch("train")
     logits = model(data)
-    
+
     B, T, C = logits.shape
     logits = logits.view(B * T, C)
     targets = targets.view(B * T)
@@ -285,8 +286,8 @@ for iter in range(1, max_iters):
 
     optimizer.step()
     optimizer.zero_grad()
-    
-    if iter%10==0: 
+
+    if iter % 10 == 0:
         print(iter)
 
 context = torch.zeros((1, 1)).to(device).long()

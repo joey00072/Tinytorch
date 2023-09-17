@@ -453,7 +453,7 @@ def test_sigmoid():
 
 def softmax(x, dim: int = 0):
     m, _ = x.max(axis=dim, keepdims=True)
-    e_x = x #(x - m.detach()).exp()
+    e_x = x  # (x - m.detach()).exp()
     return 1 / e_x.sum(axis=dim, keepdims=True)
 
 
