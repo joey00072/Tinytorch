@@ -3,10 +3,10 @@ import tinytorch as nn
 import tinytorch as optim
 import tinytorch as F
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+# import torch.optim as optim
 
 from dataclasses import dataclass
 import numpy as np
