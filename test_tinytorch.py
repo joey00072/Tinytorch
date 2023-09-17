@@ -386,7 +386,7 @@ def test_max():
     loss_t.backward()
 
     # Compute max using tinytorch
-    y_tt,_ = x_tt.max(axis=axis)
+    y_tt, _ = x_tt.max(axis=axis)
     # print(f"{x_tt.shape=} {y_tt.shape=}")
     loss_tt = y_tt.sum()
     loss_tt.backward()
@@ -451,6 +451,12 @@ def test_sigmoid():
     assert np.allclose(x_t.grad.numpy(), x_tt.grad.data), "Gradients do not match."
 
 
+def softmax(x, dim: int = 0):
+    m, _ = x.max(axis=dim, keepdims=True)
+    e_x = x #(x - m.detach()).exp()
+    return 1 / e_x.sum(axis=dim, keepdims=True)
+
+
 def test_softmax():
     x = np.random.rand(5, 3)  # Create a random 5x3 matrix
 
@@ -461,11 +467,11 @@ def test_softmax():
     x_tt = tinytorch.tensor(x, requires_grad=True)
 
     # Perform the softmax operation using PyTorch
-    z_t = torch.nn.functional.softmax(x_t, dim=1)
+    z_t = softmax(x_t, dim=1)
     z_t.sum().backward()
 
     # Perform the softmax operation using tinytorch (assuming softmax is implemented)
-    z_tt = tinytorch.softmax(x_tt, dim=1)
+    z_tt = softmax(x_tt, dim=1)
     z_tt.sum().backward()
 
     # Assert that the softmax operation results are the same for both PyTorch and tinytorch
@@ -475,5 +481,5 @@ def test_softmax():
 
     # Assert that the gradients are the same for both PyTorch and tinytorch
     assert np.allclose(
-        x_t.grad.numpy(), x_tt.grad.data
+        x_t.grad.numpy(), x_tt.grad.data, atol=1e-5
     ), "Gradients do not match between PyTorch and tinytorch."

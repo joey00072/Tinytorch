@@ -5,7 +5,7 @@ import numpy as np
 
 
 class Tensor:
-    __slots__ = ("data", "grad", "_ctx", "requires_grad")
+    __slots__ = ("data", "grad", "_ctx", "requires_grad","device")
 
     def __init__(self, data, requires_grad=False):
         self.data: np.ndarray = Tensor._data_to_numpy(data)
@@ -96,6 +96,10 @@ class Tensor:
 
     def __getitem__(self, slice_args):
         return Slice.apply(self, slice_args)
+    def __setitem__(self,idx,item):
+        if isinstance(item,Tensor):
+            item = item.data
+        self.data[idx] = item
 
     def reciprocal(self) -> Tensor:
         return Reciprocal.apply(self)
@@ -110,6 +114,9 @@ class Tensor:
         target = math.prod((s for s in shape if s != -1))
         shape = tuple(curr // target if s == -1 else s for s in shape)
         return Reshape.apply(self, shape)
+    
+    def view(self,*args)->Tensor:
+        return self.reshape(*args)
 
     def transpose(self, dim1=-2, dim2=-1):
         num_axes = len(self.shape)
@@ -124,9 +131,13 @@ class Tensor:
     def float(self):
         self.data = self.data.astype(np.float32)
         return self
+    def long(self):
+        self.data = self.data.astype(np.int16)
+        return self
 
     def to(self, device):
         self.device = device
+        return self
 
     def tolist(self):
         return self.data.tolist()
@@ -184,7 +195,7 @@ class Tensor:
         return self
 
     def clone(self, requires_grad=False) -> Tensor:
-        return Tensor(self.data.clone(), requires_grad=requires_grad)
+        return Tensor(self.data.copy(), requires_grad=requires_grad)
 
     def numpy(self):
         return self.data.copy()
@@ -210,8 +221,6 @@ class Tensor:
     def backward(self, grad=None):
         if self._ctx is None:
             return
-        # print(f"Root: {self.shape= } {self._ctx.op.__name__}")
-
         if grad is None:
             if self.size != 1:
                 raise RuntimeError("Backward can not be called on non zero tensor")
@@ -228,26 +237,23 @@ class Tensor:
         for tensor, grad in zip(child_nodes, grads):
             if grad is None:
                 continue
-            # print(f"{self._ctx.op.__name__} {self.shape=} {tensor.shape=} {grad.shape=}")
-            # try:
-            #     for t in self._ctx.args:
-            #         print(f"{t.shape=}")
-            # except:
-            #     pass
             grad = self._undo_broadcast(tensor, grad)
             if tensor.grad is None:
-                tensor.grad = Tensor(np.zeros_like(tensor.data))
-            tensor.grad += grad.detach()
+                tensor.grad = Tensor(np.zeros_like(tensor.data).astype(np.float32))
+            tensor.grad.data += grad.numpy()
             tensor.backward(grad)
+        self._ctx = None
 
 
 class Function:
+    __slots__ = ("op","args",)
     def __init__(self, op, *args):
         self.op: Function = op
         self.args: list[Tensor] = args
 
     @classmethod
     def apply(cls, *args):
+        # print(cls)
         ctx = Function(cls, *args)
         result = cls.forward(*args)
         if Function._is_part_of_graph(ctx):
@@ -280,7 +286,7 @@ class Add(Function):
     @staticmethod
     def backward(ctx, grad):
         x, y = ctx.args
-        return Tensor([1]) * grad, Tensor([1]) * grad
+        return Tensor(grad) , Tensor(grad)
 
 
 class Sub(Function):
@@ -291,7 +297,7 @@ class Sub(Function):
     @staticmethod
     def backward(ctx, grad):
         x, y = ctx.args
-        return Tensor([1]) * grad, Tensor([-1]) * grad
+        return Tensor(grad), Tensor(-grad)
 
 
 class Mul(Function):
@@ -302,7 +308,7 @@ class Mul(Function):
     @staticmethod
     def backward(ctx, grad):
         x, y = ctx.args
-        return Tensor(y.data) * grad, Tensor(x.data) * grad  #  dz/dx, dz/dy
+        return Tensor(y.data * grad.data) , Tensor(x.data * grad.data)   #  dz/dx, dz/dy
 
 
 class Reciprocal(Function):
@@ -313,7 +319,7 @@ class Reciprocal(Function):
     @staticmethod
     def backward(ctx, grad):
         (x,) = ctx.args
-        return Tensor(-1.0 / (x.data**2)) * grad
+        return Tensor((-1.0 / (x.data**2))* grad.data) 
 
 
 class MatMul(Function):
@@ -346,7 +352,7 @@ class Exp(Function):
     @staticmethod
     def backward(ctx, grad):
         (x,) = ctx.args
-        return Tensor(np.exp(x.data)) * grad
+        return Tensor(np.exp(x.data)* grad.data)
 
 
 class Reshape(Function):
@@ -374,11 +380,15 @@ class Transpose(Function):
 class Slice(Function):
     @staticmethod
     def forward(x, slice_args):
+        if isinstance(slice_args,Tensor):
+            slice_args = slice_args.data
         return Tensor(x.data[slice_args])
 
     @staticmethod
     def backward(ctx, grad):
         x, slice_args = ctx.args
+        if isinstance(slice_args,Tensor):
+            slice_args = slice_args.data
         grad_x = np.zeros_like(x.data)
         grad_x[slice_args] = grad.data
         return Tensor(grad_x), None
@@ -515,7 +525,46 @@ class Stack(Function):
         grad_data = grad.data
         grads = np.split(grad_data, grad_data.shape[axis], axis=axis)
         return tuple([*[Tensor(g) for g in grads], None])
+    
+class Cat(Function):
+    @staticmethod
+    def forward(tensors, dim):
+        data = [t.data for t in tensors]
+        concatenated_data = np.concatenate(data, axis=dim)
+        return Tensor(concatenated_data)
 
+    @staticmethod
+    def backward(ctx: Function, grad: Tensor):
+        tensors, dim = ctx.args
+        grad_data = grad.data
+        grads = np.split(grad_data, [t.shape[dim] for t in tensors[:-1]], axis=dim)
+        return [Tensor(g) for g in grads], None
+    
+    
+    
+def multinomial(tensor: Tensor, num_samples: int = 1, replacement: bool = False) -> Tensor:
+    # Check for at least 2D tensor (Batch x Classes)
+    if tensor.data.ndim < 2:
+        raise ValueError("Multinomial only supported for at least 2D tensors.")
+
+    # Initialize an empty list to hold batch indices
+    batch_indices = []
+
+    # Loop over each batch to draw samples
+    for batch in tensor.data:
+        probs = batch / batch.sum()
+        samples = np.random.multinomial(num_samples, probs)
+        indices = np.where(samples > 0)[0]
+
+        if not replacement and len(indices) != num_samples:
+            raise ValueError("Cannot draw unique samples, try with replacement=True.")
+        
+        batch_indices.append(indices)
+
+    return Tensor(np.array(batch_indices))
+
+def cat(tensors: list[Tensor], dim: int = 0) -> Tensor:
+    return Cat.apply(tensors, dim)
 
 def stack(tensors: list[Tensor], axis: int = 0) -> Tensor:
     return Stack.apply(*tensors, axis)
@@ -615,7 +664,7 @@ class Module:
             if isinstance(value, ModuleList):
                 for module in value:
                     params.extend(module.parameters())
-        return params
+        return list(set(params))
 
     def state_dict(self):
         state = {}
@@ -641,8 +690,16 @@ class Module:
                 for param, state in zip(attr, value):
                     param.load_state_dict(state)
 
+    def register_buffer(self,name,value:Tensor):
+        value = value.clone().detach() if isinstance(value,Tensor) else value
+        setattr(self,name,value)
+        
+    def to(self,device):
+        return self # add gpu backend maybe
+
     def forward(self, *args, **kwargs):
         raise NotImplemented
+    
 
 
 class Linear(Module):
@@ -679,6 +736,7 @@ class ModuleList(Module, list):
         for module in self:
             params.extend(module.parameters())
         return params
+    
 
 
 class Optimizer:
