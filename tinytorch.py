@@ -752,6 +752,14 @@ class Module:
 
     def to(self, device):
         return self  # add gpu backend maybe
+    
+    def eval(self):
+        for p in self.parameters():
+            p.requires_grad = False
+        
+    def train(self):
+        for p in self.parameters():
+            p.requires_grad = True
 
     def forward(self, *args, **kwargs):
         raise NotImplemented

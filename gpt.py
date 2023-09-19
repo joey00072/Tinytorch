@@ -20,10 +20,10 @@ max_iters = 5000
 eval_interval = 500
 learning_rate = 3e-4
 device = "cpu"  # "cuda" if torch.cuda.is_available() else "cpu"
-eval_iters = 200
+eval_iters = 50
 n_embd = 128*2
 n_head = 4
-n_layer = 3
+n_layer = 2
 dropout = 0.2
 # ------------
 
@@ -116,11 +116,12 @@ class RMSNorm(nn.Module):
 # @torch.no_grad()
 def estimate_loss():
     out = {}
-    # model.eval()
+    model.eval()
+    
     for split in ["train", "val"]:
-        losses = torch.zeros(eval_iters)
+        losses = []
         for k in range(eval_iters):
-            # print(f"{k=}")
+            
             data, targets = get_batch(split)
             logits = model(data)
 
@@ -128,10 +129,9 @@ def estimate_loss():
             logits = logits.view(B * T, C)
             targets = targets.view(B * T)
             loss = F.cross_entropy(logits, targets)
-
-            losses[k] = loss.item()
-        out[split] = losses.mean()
-    # model.train()
+            losses.append(loss.item())
+        out[split] = sum(losses)/len(losses)
+    model.train()
     return out
 
 
@@ -238,13 +238,16 @@ class GPT(nn.Module):
         return logits
 
     def generate(self, idx, max_new_tokens):
-        for _ in range(max_new_tokens):
+        self.eval()
+        for i in range(max_new_tokens):
+            # print(i)
             idx_cond = idx[:, -block_size:]
             logits = self(idx_cond)
             logits = logits[:, -1, :]
             probs = F.softmax(logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
+        self.train()
         return idx
 
 
@@ -264,10 +267,13 @@ print(sum(math.prod(p.shape) for p in m.parameters()) / 1e6, "M parameters")
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
 
-for iter in range(1, max_iters):
+for iter in range(1,max_iters):
     if iter % eval_interval == 0 or iter == max_iters - 1:
+        print("###")
+        model.eval()
         context = torch.zeros((1, 1)).to(device).long()
         print(tokenizer.decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+        model.train()
         losses = estimate_loss()
         print(
             f"step {iter}: train loss {losses['train'].item():.4f}, val loss {losses['val'].item():.4f}"
@@ -289,8 +295,7 @@ for iter in range(1, max_iters):
     optimizer.zero_grad()
     
 
-    if iter % 10 == 0:
-        print(iter)
+    print(f"{iter=}")
 
 context = torch.zeros((1, 1)).to(device).long()
 print(tokenizer.decode(m.generate(context, max_new_tokens=500)[0].tolist()))
