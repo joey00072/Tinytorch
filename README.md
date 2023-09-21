@@ -20,6 +20,20 @@ $$
   <img src="images/image.png" alt="Alt text">
 </p>
 
+
+```python
+import tinytorch as tt
+
+def f(x):
+  return x**3 + x
+
+x = tt.tensor((tt.arange(700) - 400)/100 , requires_grad=True)
+z = f(x)
+z.sum().backward()
+print(x.grad)
+
+```
+
 #### Visulization 
 If you want to see your computation graph run visulize.py
 
