@@ -19,9 +19,9 @@ block_size = 128
 max_iters = 5000
 eval_interval = 500
 learning_rate = 3e-4
-device = "cpu"  # "cuda" if torch.cuda.is_available() else "cpu"
+device = "cuda"  # "cuda" if torch.cuda.is_available() else "cpu"
 eval_iters = 50
-n_embd = 128*4
+n_embd = 128
 n_head = 4
 n_layer = 2
 dropout = 0.2
@@ -162,24 +162,26 @@ class MHA(nn.Module):
         k = self.key(x)
         q = self.query(x)
         v = self.value(x)
+        k = k.reshape(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
+        q = q.reshape(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
+        v = v.reshape(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
 
-        k = k.reshape(B, T, self.n_heads, C // self.n_heads)
-        q = q.reshape(B, T, self.n_heads, C // self.n_heads)
-        v = v.reshape(B, T, self.n_heads, C // self.n_heads)
-
-        k = k.transpose(1, 2)
-        q = q.transpose(1, 2)
-        v = v.transpose(1, 2)
-
-        wei = (q @ k.transpose(-1, -2)) / (self.head_dim**0.5)
-        wei = self.mask[:, :, :T, :T] + wei
-        wei = F.softmax(wei, dim=-1)
-
-        v = wei @ v
-        v = v.transpose(1, 2).reshape(B, T, C)
-
+        
+        attn = self.attention(k,q,v,self.mask)
+        
+        v = attn.transpose(1, 2).reshape(B, T, C)
         x = self.proj(v)
         return x
+    @staticmethod
+    def attention(k,q,v,mask):
+        B,n_head,T,C = k.shape
+        wei = (q @ k.transpose(-1, -2)) * (C**-0.5)
+        wei = mask[:, :, :T, :T] + wei
+        wei = F.softmax(wei, dim=-1)
+        x = wei @ v
+        return x
+        
+        
 
 
 class MLP(nn.Module):
