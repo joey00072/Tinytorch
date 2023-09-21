@@ -13,7 +13,7 @@ if JAX:  # just using as faster numpy on GPU
 
 class Tensor:
     __slots__ = ("data", "grad", "_ctx", "requires_grad", "device")
-
+    _compute_grad = True
     def __init__(self, data, requires_grad=False):
         self.data: np.ndarray = Tensor._data_to_numpy(data)
         self.grad: Tensor = None
@@ -280,6 +280,9 @@ class Function:
 
     @staticmethod
     def _is_part_of_graph(ctx: Function):
+        if not Tensor._compute_grad:
+            return False
+        
         for node in ctx.args:
             if isinstance(node, Tensor) and (
                 node.requires_grad or node._ctx is not None
@@ -689,12 +692,15 @@ class Device:
 def no_grad():
     """Context manager to temporarily disable gradient computation."""
     class NoGradContext:
+        def __call__(self,func):
+            def wrapper(*args,**kwargs):
+                with NoGradContext():
+                    return func(*args,**kwargs)
+            return wrapper
         def __enter__(self):
-            Tensor._no_grad_enabled = True
-
+            Tensor._compute_grad = False
         def __exit__(self, exc_type, exc_value, traceback):
-            Tensor._no_grad_enabled = False
-
+            Tensor._compute_grad = True
     return NoGradContext()
 
 class Parameter(Tensor):
@@ -861,6 +867,9 @@ class Adam(Optimizer):
 
 
 if __name__ == "__main__":
-    x = arange(10)
-    z = x[1:4]
-    print(z)
+    x = tensor(2,requires_grad=True)
+    def f(x):
+        return (x+1)/x
+    z = f(x)
+    z.backward()
+    print(x.grad)

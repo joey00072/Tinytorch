@@ -10,10 +10,10 @@ import numpy as np
 import requests
 from tqdm import tqdm
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+# import torch.optim as optim
 
 import tinytorch as torch
 import tinytorch as nn
@@ -23,7 +23,7 @@ import tinytorch as F
 # Constants
 EPOCHS = 1
 BATCH_SIZE = 32
-LR = 1e-3
+LR = 4e-3
 MNIST_DIR = "mnist"
 BASE_URL = "http://yann.lecun.com/exdb/mnist/"
 FILES = [
@@ -85,23 +85,13 @@ class Network(nn.Module):
         x = F.tanh(self.l1(x))
         return self.l2(x)
 
-
+@torch.no_grad()
 def test(model: Network, test_images: torch.Tensor, test_labels: torch.Tensor):
-    model.eval()
-    
-    # Forward pass for all test images at once
     preds = model.forward(test_images)
-    
-    # Get the indices of the predicted labels
-    pred_indices = torch.argmax(preds, axis=-1).numpy()  # Use 'axis' instead of 'axis'
-    
-    # Convert test_labels to a 1D tensor (assuming it's one-hot encoded)
-     # Use 'dim' instead of 'axis'
+    pred_indices = torch.argmax(preds, axis=-1).numpy()
     test_labels = test_labels.numpy()
     
-    # Calculate accuracy
-    correct = 0
-    
+    correct = 0    
     for p,t in zip(pred_indices.reshape(-1),test_labels.reshape(-1)):
         if p==t:
             correct+=1
@@ -129,7 +119,7 @@ def train(
                 pbar.update(1)
                 pbar.set_postfix({"loss": float(loss.item())})
 
-        print(f"Epoch: {epoch}, Loss: {loss.item()}")
+        print(f"Epoch: {epoch}, Loss: {loss.item():.4f}")
         test(model, test_images, test_labels)
 
 
