@@ -231,7 +231,7 @@ class Tensor:
                 grad = grad.sum(axis=idx, keepdims=True)
 
         return Tensor(grad)
-
+    
     def backward(self, grad=None):
         if self._ctx is None:
             return
@@ -256,7 +256,7 @@ class Tensor:
                 tensor.grad = Tensor(np.zeros_like(tensor.data).astype(np.float32))
             tensor.grad.data += grad.numpy()
             tensor.backward(grad)
-        self._ctx = None
+        # self._ctx = None
 
 
 class Function:

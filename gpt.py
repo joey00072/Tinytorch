@@ -14,13 +14,13 @@ import math
 import numpy
 
 # hyperparameters
-batch_size = 64
+batch_size = 2
 block_size = 128
 max_iters = 5000
 eval_interval = 500
 learning_rate = 3e-4
 device = "cuda"  # "cuda" if torch.cuda.is_available() else "cpu"
-eval_iters = 50
+eval_iters = 200
 n_embd = 128
 n_head = 4
 n_layer = 2
@@ -113,7 +113,7 @@ class RMSNorm(nn.Module):
         return output * self.weight
 
 
-# @torch.no_grad()
+@torch.no_grad()
 def estimate_loss():
     out = {}
     model.eval()
@@ -121,7 +121,7 @@ def estimate_loss():
     for split in ["train", "val"]:
         losses = []
         for k in range(eval_iters):
-            
+            print(f"{k=}")
             data, targets = get_batch(split)
             logits = model(data)
 
@@ -269,13 +269,13 @@ print(sum(math.prod(p.shape) for p in m.parameters()) / 1e6, "M parameters")
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
 
-for iter in range(1,max_iters):
+for iter in range(max_iters):
     if iter % eval_interval == 0 or iter == max_iters - 1:
-        print("###")
-        model.eval()
-        context = torch.zeros((1, 1)).to(device).long()
-        print(tokenizer.decode(m.generate(context, max_new_tokens=500)[0].tolist()))
-        model.train()
+        # print("###")
+        # model.eval()
+        # context = torch.zeros((1, 1)).to(device).long()
+        # print(tokenizer.decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+        # model.train()
         losses = estimate_loss()
         print(
             f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
@@ -283,6 +283,7 @@ for iter in range(1,max_iters):
         optimizer.zero_grad()
 
     data, targets = get_batch("train")
+    print("forward")
     logits = model(data)
     # print(sum(model.token_embedding.weight.reshape(-1).tolist()))
 
@@ -292,9 +293,11 @@ for iter in range(1,max_iters):
     targets = targets.view(B * T)
 
     loss = F.cross_entropy(logits, targets)
-
+    
+    print("backward")
     loss.backward()
-
+    
+    print("step")
     optimizer.step()
     optimizer.zero_grad()
     
