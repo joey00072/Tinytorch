@@ -9,12 +9,21 @@ import gzip
 import numpy as np
 import requests
 from tqdm import tqdm
-import tinytorch as tt
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+
+import tinytorch as torch
+import tinytorch as nn
+import tinytorch as optim
+import tinytorch as F
 
 # Constants
-EPOCHS = 3
+EPOCHS = 1
 BATCH_SIZE = 32
-LR = 4e-3
+LR = 1e-3
 MNIST_DIR = "mnist"
 BASE_URL = "http://yann.lecun.com/exdb/mnist/"
 FILES = [
@@ -59,36 +68,51 @@ def one_hot(labels: np.array) -> np.array:
     return np.eye(10)[labels]
 
 
-def get_batch(images: tt.Tensor, labels: tt.Tensor):
+def get_batch(images: torch.Tensor, labels: torch.Tensor):
     indices = list(range(0, len(images), BATCH_SIZE))
     random.shuffle(indices)
     for i in indices:
         yield images[i : i + BATCH_SIZE], labels[i : i + BATCH_SIZE]
 
 
-class Network(tt.Module):
+class Network(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.l1 = tt.Linear(28 * 28, 128)
-        self.l2 = tt.Linear(128, 10)
+        self.l1 = nn.Linear(28 * 28, 128)
+        self.l2 = nn.Linear(128, 10)
 
-    def forward(self, x: tt.Tensor) -> tt.Tensor:
-        x = tt.tanh(self.l1(x))
-        return tt.tanh(self.l2(x))
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = F.tanh(self.l1(x))
+        return self.l2(x)
 
 
-def test(model: Network, test_images: tt.Tensor, test_labels: tt.Tensor):
-    num_correct = 0
-    for image, label in zip(test_images, test_labels):
-        pred = model.forward(image)
-        if np.argmax(pred.data) == np.argmax(label.data):
-            num_correct += 1
-    print(f"Test accuracy: {num_correct / len(test_images):.2%}")
+def test(model: Network, test_images: torch.Tensor, test_labels: torch.Tensor):
+    model.eval()
+    
+    # Forward pass for all test images at once
+    preds = model.forward(test_images)
+    
+    # Get the indices of the predicted labels
+    pred_indices = torch.argmax(preds, axis=-1).numpy()  # Use 'axis' instead of 'axis'
+    
+    # Convert test_labels to a 1D tensor (assuming it's one-hot encoded)
+     # Use 'dim' instead of 'axis'
+    test_labels = test_labels.numpy()
+    
+    # Calculate accuracy
+    correct = 0
+    
+    for p,t in zip(pred_indices.reshape(-1),test_labels.reshape(-1)):
+        if p==t:
+            correct+=1
+    accuracy= correct/ len(test_labels)
+    print(f"Test accuracy: {accuracy:.2%}")
 
 
 def train(
-    model: Network, optimizer: tt.Adam, train_images: tt.Tensor, train_labels: tt.Tensor
+    model: Network, optimizer: optim.Adam, train_images: torch.Tensor, train_labels: torch.Tensor
 ):
+    model.train()
     for epoch in range(EPOCHS):
         # Create a tqdm object for the progress bar
         batch_generator = get_batch(train_images, train_labels)
@@ -97,7 +121,7 @@ def train(
             for batch_images, batch_labels in batch_generator:
                 optimizer.zero_grad()
                 pred = model.forward(batch_images)
-                loss = tt.mse_loss(pred, batch_labels)
+                loss = F.cross_entropy(pred, batch_labels)
                 loss.backward()
                 optimizer.step()
 
@@ -105,7 +129,7 @@ def train(
                 pbar.update(1)
                 pbar.set_postfix({"loss": float(loss.item())})
 
-        print(f"Epoch: {epoch}, Loss: {loss}")
+        print(f"Epoch: {epoch}, Loss: {loss.item()}")
         test(model, test_images, test_labels)
 
 
@@ -114,13 +138,14 @@ if __name__ == "__main__":
     (train_images, train_labels), (test_images, test_labels) = load_mnist()
 
     train_labels, test_labels = map(
-        tt.tensor, map(one_hot, [train_labels, test_labels])
+        torch.tensor,  [train_labels, test_labels]
     )
-    train_images = tt.tensor(train_images.reshape(-1, 28 * 28) / 255)
-    test_images = tt.tensor(test_images.reshape(-1, 28 * 28) / 255)
+
+    train_images = torch.tensor(train_images.reshape(-1, 28 * 28) / 255).float()
+    test_images = torch.tensor(test_images.reshape(-1, 28 * 28) / 255).float()
 
     model = Network()
-    optimizer = tt.Adam(model.parameters(), lr=LR)
+    optimizer = optim.Adam(model.parameters(), lr=LR)
 
     start_time = time.perf_counter()
     train(model, optimizer, train_images, train_labels)

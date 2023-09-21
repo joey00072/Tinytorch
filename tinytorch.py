@@ -32,7 +32,7 @@ class Tensor:
             return data.data.copy()
         if JAX:
             return np.array(data)
-        raise ValueError("Invalid value passed to tensor")
+        raise ValueError(f"Invalid value passed to tensor. Type: {type(data)}")
 
     def __repr__(self) -> str:
         s = f"{np.round(self.data,4)} "
@@ -409,7 +409,7 @@ class Slice(Function):
             slice_args = slice_args.data
         grad_x = np.zeros_like(x.data)
         if JAX:
-            grad_x.at[slice_args].set(grad.data)
+            grad_x = grad_x.at[slice_args].set(grad.data)
         else:
             grad_x[slice_args] = grad.data
         return Tensor(grad_x), None
@@ -527,7 +527,7 @@ class CrossEntropy(Function):
         probs = exps / np.sum(exps, axis=1, keepdims=True)
         d_loss = np.zeros_like(probs)
         if JAX:
-            d_loss.at[np.arange(len(y_true.data)), y_true.data.astype(int)].set(
+            d_loss = d_loss.at[np.arange(len(y_true.data)), y_true.data.astype(int)].set(
                 d_loss[np.arange(len(y_true.data)), y_true.data.astype(int)] - 1
             )
         else:
@@ -663,12 +663,16 @@ def zeros(shape, requires_grad=False) -> Tensor:
 def rand(*shape, requires_grad=False) -> Tensor:
     if isinstance(shape[0], tuple):
         shape = shape[0]
+    mean = 0
+    std_dev = 1
     if JAX:
-        arr = jax.random.uniform(jax.random.key(int(time.time())), shape)
+        arr = jax.random.normal(jax.random.key(int(time.time())), shape=shape)
     else:
-        arr = np.random.rand(*shape)
+        arr = np.random.normal(mean,std_dev,size=shape)
     return Tensor(arr, requires_grad=requires_grad)
 
+def argmax(tensor:Tensor,axis=None):
+    return Tensor(np.array(np.argmax(tensor.data,axis=axis)))
 
 def tensor(data, requires_grad=False):
     return Tensor(data, requires_grad)
@@ -681,7 +685,17 @@ def arange(*args, requires_grad=False):
 class Device:
     def __init__(self, name: str = "cpu"):
         self.name = name
+        
+def no_grad():
+    """Context manager to temporarily disable gradient computation."""
+    class NoGradContext:
+        def __enter__(self):
+            Tensor._no_grad_enabled = True
 
+        def __exit__(self, exc_type, exc_value, traceback):
+            Tensor._no_grad_enabled = False
+
+    return NoGradContext()
 
 class Parameter(Tensor):
     def __init__(self, tensor):
@@ -771,7 +785,7 @@ class Linear(Module):
         self.out_features = out_features
 
         self.weight = Parameter(
-            rand((out_features, in_features)) / math.sqrt(in_features)
+            rand((out_features, in_features))  / np.sqrt(in_features)
         )
         self.bias = Parameter(zeros(out_features)) if bias else None
 

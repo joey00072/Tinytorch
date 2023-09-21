@@ -21,7 +21,7 @@ eval_interval = 500
 learning_rate = 3e-4
 device = "cpu"  # "cuda" if torch.cuda.is_available() else "cpu"
 eval_iters = 50
-n_embd = 128*2
+n_embd = 128*4
 n_head = 4
 n_layer = 2
 dropout = 0.2
@@ -276,12 +276,14 @@ for iter in range(1,max_iters):
         model.train()
         losses = estimate_loss()
         print(
-            f"step {iter}: train loss {losses['train'].item():.4f}, val loss {losses['val'].item():.4f}"
+            f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
         )
         optimizer.zero_grad()
 
     data, targets = get_batch("train")
     logits = model(data)
+    # print(sum(model.token_embedding.weight.reshape(-1).tolist()))
+
 
     B, T, C = logits.shape
     logits = logits.view(B * T, C)
@@ -295,7 +297,7 @@ for iter in range(1,max_iters):
     optimizer.zero_grad()
     
 
-    print(f"{iter=}")
+    print(f"{iter=} {loss.item()=}")
 
 context = torch.zeros((1, 1)).to(device).long()
 print(tokenizer.decode(m.generate(context, max_new_tokens=500)[0].tolist()))
