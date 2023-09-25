@@ -10,39 +10,43 @@ import numpy as np
 import requests
 from tqdm import tqdm
 
-# import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# import torch.optim as optim
-
-import tinytorch as torch
-import tinytorch as nn
-import tinytorch as optim
-import tinytorch as F
+import tinytorch as tt
 
 # Constants
 EPOCHS = 1
 BATCH_SIZE = 32
 LR = 4e-3
 MNIST_DIR = "mnist"
-BASE_URL = "http://yann.lecun.com/exdb/mnist/"
-FILES = [
-    "train-images-idx3-ubyte.gz",
-    "train-labels-idx1-ubyte.gz",
-    "t10k-images-idx3-ubyte.gz",
-    "t10k-labels-idx1-ubyte.gz",
-]
 
 
 def download_mnist():
-    if not os.path.exists(MNIST_DIR):
-        os.makedirs(MNIST_DIR)
-        for file in FILES:
-            url = f"{BASE_URL}{file}"
-            response = requests.get(url)
-            with open(f"{MNIST_DIR}/{file}", "wb") as f:
-                f.write(response.content)
+    # Define the URLs of the files to download
+    base_url = "https://github.com/golbin/TensorFlow-MNIST/raw/master/mnist/data/"
+    files = [
+        "train-images-idx3-ubyte.gz",
+        "train-labels-idx1-ubyte.gz",
+        "t10k-images-idx3-ubyte.gz",
+        "t10k-labels-idx1-ubyte.gz",
+    ]
+    # Define the directory to save the files
+    save_dir = MNIST_DIR
+    os.makedirs(save_dir, exist_ok=True)
 
+    for file in files:
+        file_path = os.path.join(save_dir, file)
+
+        if os.path.exists(file_path):
+            continue
+
+        url = base_url + file
+        response = requests.get(url, stream=True)
+        if response.status_code == 200:
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print(f"Downloaded {file}")
+        else:
+            print(f"Failed to download {file}. HTTP Response Code: {response.status_code}")
 
 def load_mnist() -> tuple:
     def read_labels(filename: str) -> np.array:
@@ -68,27 +72,27 @@ def one_hot(labels: np.array) -> np.array:
     return np.eye(10)[labels]
 
 
-def get_batch(images: torch.Tensor, labels: torch.Tensor):
+def get_batch(images: tt.Tensor, labels: tt.Tensor):
     indices = list(range(0, len(images), BATCH_SIZE))
     random.shuffle(indices)
     for i in indices:
         yield images[i : i + BATCH_SIZE], labels[i : i + BATCH_SIZE]
 
 
-class Network(nn.Module):
+class Network(tt.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.l1 = nn.Linear(28 * 28, 128)
-        self.l2 = nn.Linear(128, 10)
+        self.l1 = tt.Linear(28 * 28, 128)
+        self.l2 = tt.Linear(128, 10)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = F.tanh(self.l1(x))
+    def forward(self, x: tt.Tensor) -> tt.Tensor:
+        x = tt.tanh(self.l1(x))
         return self.l2(x)
 
-@torch.no_grad()
-def test(model: Network, test_images: torch.Tensor, test_labels: torch.Tensor):
+@tt.no_grad()
+def test(model: Network, test_images: tt.Tensor, test_labels: tt.Tensor):
     preds = model.forward(test_images)
-    pred_indices = torch.argmax(preds, axis=-1).numpy()
+    pred_indices = tt.argmax(preds, axis=-1).numpy()
     test_labels = test_labels.numpy()
     
     correct = 0    
@@ -100,7 +104,7 @@ def test(model: Network, test_images: torch.Tensor, test_labels: torch.Tensor):
 
 
 def train(
-    model: Network, optimizer: optim.Adam, train_images: torch.Tensor, train_labels: torch.Tensor
+    model: Network, optimizer: tt.Adam, train_images: tt.Tensor, train_labels: tt.Tensor
 ):
     model.train()
     for epoch in range(EPOCHS):
@@ -111,7 +115,7 @@ def train(
             for batch_images, batch_labels in batch_generator:
                 optimizer.zero_grad()
                 pred = model.forward(batch_images)
-                loss = F.cross_entropy(pred, batch_labels)
+                loss = tt.cross_entropy(pred, batch_labels)
                 loss.backward()
                 optimizer.step()
 
@@ -128,14 +132,14 @@ if __name__ == "__main__":
     (train_images, train_labels), (test_images, test_labels) = load_mnist()
 
     train_labels, test_labels = map(
-        torch.tensor,  [train_labels, test_labels]
+        tt.tensor,  [train_labels, test_labels]
     )
 
-    train_images = torch.tensor(train_images.reshape(-1, 28 * 28) / 255).float()
-    test_images = torch.tensor(test_images.reshape(-1, 28 * 28) / 255).float()
+    train_images = tt.tensor(train_images.reshape(-1, 28 * 28) / 255).float()
+    test_images = tt.tensor(test_images.reshape(-1, 28 * 28) / 255).float()
 
     model = Network()
-    optimizer = optim.Adam(model.parameters(), lr=LR)
+    optimizer = tt.Adam(model.parameters(), lr=LR)
 
     start_time = time.perf_counter()
     train(model, optimizer, train_images, train_labels)

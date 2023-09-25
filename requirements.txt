@@ -1,5 +1,7 @@
 --find-links https://download.pytorch.org/whl/torch_stable.html
 numpy
 torch==2.0.1+cpu
+jax
+jaxlib
 pytest
 graphviz

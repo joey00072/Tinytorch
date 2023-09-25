@@ -6,15 +6,15 @@ this is really autograd engine backed by numpy<br><br>
 #### `tinytorch.py` shall always remain under <b>1000 lines</b>. if not we will <i>revert commit</i>
 
  
-[![Python package](https://github.com/joey00072/tinytorch/actions/workflows/unit_test.yaml/badge.svg)](https://github.com/joey00072/tinytorch/actions/workflows/unit_test.yaml)
+[![Python package](https://github.com/joey00072/tinytorch/actions/workflows/unit_test.yaml/badge.svg)](https://github.com/joey00072/tinytorch/actions/workflows/unit_test.yaml) 
 
 
 $$
 f(x) =x^3+x
 $$
 
-```python
-import tinytorch as tt
+```python 
+import tinytorch as tt      #👀
 
 def f(x):
   return x**3 + x
@@ -39,7 +39,7 @@ print(x.grad)
 ### What can you do with it?
 #### Automatic diffecrtion, yep
 ```python 
-import tinytorch as tt #👀
+import tinytorch as tt 
 
 def f(x,y):
   return x**2 + x*y + (y**3+y) **0.5
@@ -58,12 +58,19 @@ print(y.grad)
 python mnist.py
 ```
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/11rmsyRW65tfKLtAF_D938xsvtgGHRu-z?usp=sharing)
+
 #### GPT?? you bet (yes LLM fr fr)
 
 ```bash
 GPU=1 python mnist.py
 ```
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/14MjO1sX3oOZZDZR3J2GwzvwYYk85B9Sz?usp=sharing)
+
+
 note: numpy is too slow to train llm you need to install jax (just using it as faster numpy)
+
+
 #### Visulization 
 If you want to see your computation graph run visulize.py
 
@@ -97,6 +104,9 @@ Bcs I was bored
 - performance optimization / more examples welcome
 - doc sources if any
 - keep tinytorch.py under 1000 lines
+
+#### Buy me Chai/Coffee
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/R6R8KQTZ5)
 
 ### License
 [MIT](./LICENSE)
