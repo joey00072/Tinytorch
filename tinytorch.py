@@ -232,33 +232,48 @@ class Tensor:
 
         return Tensor(grad)
     
-    def backward(self, grad=None):
+        
+    def backward(self):
         if self._ctx is None:
             return
-        if grad is None:
+        
+        if self.grad is None:
             if self.size != 1:
                 raise RuntimeError("Backward can not be called on non zero tensor")
-            grad = Tensor([1.0])
-            self.grad = grad
-
-        op = self._ctx.op
-        child_nodes = self._ctx.args
-
-        grads = op.backward(self._ctx, grad)
-        if len(self._ctx.args) == 1:
-            grads = [grads]
-
-        for tensor, grad in zip(child_nodes, grads):
-            if grad is None:
+            self.grad = Tensor([1.0])
+        
+        def topo_sort(node:Tensor,visited:set,sortlist:list)->list:
+            if not isinstance(node,Tensor) or node in visited:
+                return sortlist
+            visited.add(node)
+            if node._ctx is None:
+                sortlist.append(node)
+                return sortlist
+            for child_node in node._ctx.args:
+                topo_sort(child_node,visited,sortlist)
+            sortlist.append(node)
+            return sortlist
+        
+        node_list:list[Tensor] = reversed(topo_sort(self,set(),[]))
+        
+        for node in node_list:
+            if node._ctx is None:
                 continue
-            grad = self._undo_broadcast(tensor, grad)
-            if tensor.grad is None:
-                tensor.grad = Tensor(np.zeros_like(tensor.data).astype(np.float32))
-            tensor.grad.data += grad.numpy()
-            tensor.backward(grad)
-        # self._ctx = None
+            grads = node._ctx.op.backward(node._ctx, node.grad)
+            if len(node._ctx.args) == 1:
+                grads = [grads]
 
-
+            for tensor, grad in zip(node._ctx.args, grads):
+                if grad is None:
+                    continue
+                grad = self._undo_broadcast(tensor, grad)
+                if tensor.grad is None:
+                    tensor.grad = Tensor(np.zeros_like(tensor.data).astype(np.float32))
+                tensor.grad.data += grad.numpy()
+                
+            node._ctx = None 
+            
+        
 class Function:
     __slots__ = (
         "op",
@@ -791,7 +806,7 @@ class Linear(Module):
         self.out_features = out_features
 
         self.weight = Parameter(
-            rand((out_features, in_features))  / np.sqrt(in_features)
+            rand((out_features, in_features))  / np.sqrt(in_features+out_features)
         )
         self.bias = Parameter(zeros(out_features)) if bias else None
 
