@@ -453,12 +453,12 @@ def test_sigmoid():
 
 def softmax(x: torch.Tensor, dim: int = 0) -> torch.Tensor:
     m, _ = x.max(axis=dim, keepdims=True)
-    e_x = (x - m ).exp()
+    e_x = (x - m).exp()
     return e_x / e_x.sum(axis=dim, keepdims=True)
 
 
 def test_softmax():
-    x = np.random.rand(5,3)  # Create a random 5x3 matrix
+    x = np.random.rand(5, 3)  # Create a random 5x3 matrix
 
     # Convert to PyTorch tensor
     x_t = torch.tensor(x, requires_grad=True)
@@ -485,10 +485,8 @@ def test_softmax():
     ), "Gradients do not match between PyTorch and tinytorch."
 
 
-
-
 def test_softmax2():
-    x = np.random.rand(5,3)  # Create a random 5x3 matrix
+    x = np.random.rand(5, 3)  # Create a random 5x3 matrix
     x[-1][-1] = -np.inf
 
     # Convert to PyTorch tensor
@@ -516,67 +514,57 @@ def test_softmax2():
     ), "Gradients do not match between PyTorch and tinytorch."
 
 
-
 def test_attention():
-    
     def softmax(x: torch.Tensor, dim: int = 0) -> torch.Tensor:
         m, _ = x.max(axis=dim, keepdims=True)
-        e_x = (x - m ).exp()
+        e_x = (x - m).exp()
         return e_x / e_x.sum(axis=dim, keepdims=True)
 
-    def attention(k,q,v,mask):
-        B,n_head,T,C = k.shape
+    def attention(k, q, v, mask):
+        B, n_head, T, C = k.shape
         wei = (q @ k.transpose(-1, -2)) * (C**-0.5)
         wei = mask[:, :, :T, :T] + wei
         wei = softmax(wei, dim=-1)
         x = wei @ v
         return x
-    B,n_head,T,C = 3,5,7,9
-    seq_len = 20
-    k = np.random.rand(*(B,n_head,T,C))
-    q = np.random.rand(*(B,n_head,T,C))
-    v = np.random.rand(*(B,n_head,T,C))
-    
-    
-    
-    mask = (
-                np.tril(np.zeros((1, 1, seq_len, seq_len)))
-                + np.triu(
-                    -np.inf * np.ones((1, 1, seq_len, seq_len)),
-                    k=1,
-                )
-            )
-    
-    kt = torch.tensor(k,requires_grad=True)
-    qt = torch.tensor(q,requires_grad=True)
-    vt = torch.tensor(v,requires_grad=True)
-    maskt = torch.tensor(mask,requires_grad=True)
-    outt = attention(kt,qt,vt,maskt)
-    outt.sum().backward()
-    
-    ktt = tinytorch.tensor(k,requires_grad=True)
-    qtt = tinytorch.tensor(q,requires_grad=True)
-    vtt = tinytorch.tensor(v,requires_grad=True)
-    masktt = tinytorch.tensor(mask,requires_grad=True)
-    outtt = attention(ktt,qtt,vtt,masktt)
-    outtt.sum().backward()
-    
 
- 
-    
+    B, n_head, T, C = 3, 5, 7, 9
+    seq_len = 20
+    k = np.random.rand(*(B, n_head, T, C))
+    q = np.random.rand(*(B, n_head, T, C))
+    v = np.random.rand(*(B, n_head, T, C))
+
+    mask = np.tril(np.zeros((1, 1, seq_len, seq_len))) + np.triu(
+        -np.inf * np.ones((1, 1, seq_len, seq_len)),
+        k=1,
+    )
+
+    kt = torch.tensor(k, requires_grad=True)
+    qt = torch.tensor(q, requires_grad=True)
+    vt = torch.tensor(v, requires_grad=True)
+    maskt = torch.tensor(mask, requires_grad=True)
+    outt = attention(kt, qt, vt, maskt)
+    outt.sum().backward()
+
+    ktt = tinytorch.tensor(k, requires_grad=True)
+    qtt = tinytorch.tensor(q, requires_grad=True)
+    vtt = tinytorch.tensor(v, requires_grad=True)
+    masktt = tinytorch.tensor(mask, requires_grad=True)
+    outtt = attention(ktt, qtt, vtt, masktt)
+    outtt.sum().backward()
+
     assert np.allclose(
-        outt.detach().numpy(), outtt.detach().numpy() , atol=1e-5
+        outt.detach().numpy(), outtt.detach().numpy(), atol=1e-5
     ), "Gradients do not match between PyTorch and tinytorch."
-    
+
     assert np.allclose(
         kt.grad.numpy(), ktt.grad.data, atol=1e-5
     ), "Gradients do not match between PyTorch and tinytorch."
-    
+
     assert np.allclose(
         qt.grad.numpy(), qtt.grad.data, atol=1e-5
     ), "Gradients do not match between PyTorch and tinytorch."
-    
+
     assert np.allclose(
         vt.grad.numpy(), vtt.grad.data, atol=1e-5
     ), "Gradients do not match between PyTorch and tinytorch."
-    

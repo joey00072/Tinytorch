@@ -41,12 +41,15 @@ def download_mnist():
         url = base_url + file
         response = requests.get(url, stream=True)
         if response.status_code == 200:
-            with open(file_path, 'wb') as f:
+            with open(file_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
             print(f"Downloaded {file}")
         else:
-            print(f"Failed to download {file}. HTTP Response Code: {response.status_code}")
+            print(
+                f"Failed to download {file}. HTTP Response Code: {response.status_code}"
+            )
+
 
 def load_mnist() -> tuple:
     def read_labels(filename: str) -> np.array:
@@ -89,17 +92,18 @@ class Network(tt.Module):
         x = tt.tanh(self.l1(x))
         return self.l2(x)
 
+
 @tt.no_grad()
 def test(model: Network, test_images: tt.Tensor, test_labels: tt.Tensor):
     preds = model.forward(test_images)
     pred_indices = tt.argmax(preds, axis=-1).numpy()
     test_labels = test_labels.numpy()
-    
-    correct = 0    
-    for p,t in zip(pred_indices.reshape(-1),test_labels.reshape(-1)):
-        if p==t:
-            correct+=1
-    accuracy= correct/ len(test_labels)
+
+    correct = 0
+    for p, t in zip(pred_indices.reshape(-1), test_labels.reshape(-1)):
+        if p == t:
+            correct += 1
+    accuracy = correct / len(test_labels)
     print(f"Test accuracy: {accuracy:.2%}")
 
 
@@ -131,9 +135,7 @@ if __name__ == "__main__":
     download_mnist()
     (train_images, train_labels), (test_images, test_labels) = load_mnist()
 
-    train_labels, test_labels = map(
-        tt.tensor,  [train_labels, test_labels]
-    )
+    train_labels, test_labels = map(tt.tensor, [train_labels, test_labels])
 
     train_images = tt.tensor(train_images.reshape(-1, 28 * 28) / 255).float()
     test_images = tt.tensor(test_images.reshape(-1, 28 * 28) / 255).float()

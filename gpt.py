@@ -21,7 +21,7 @@ eval_interval = 500
 learning_rate = 3e-4
 device = "cuda"  # "cuda" if torch.cuda.is_available() else "cpu"
 eval_iters = 100
-n_embd = 128*2
+n_embd = 128 * 2
 n_head = 4
 n_layer = 2
 dropout = 0.2
@@ -117,7 +117,7 @@ class RMSNorm(nn.Module):
 def estimate_loss():
     out = {}
     model.eval()
-    
+
     for split in ["train", "val"]:
         losses = []
         for k in range(eval_iters):
@@ -129,7 +129,7 @@ def estimate_loss():
             targets = targets.view(B * T)
             loss = F.cross_entropy(logits, targets)
             losses.append(loss.item())
-        out[split] = sum(losses)/len(losses)
+        out[split] = sum(losses) / len(losses)
     model.train()
     return out
 
@@ -165,22 +165,19 @@ class MHA(nn.Module):
         q = q.reshape(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
         v = v.reshape(B, T, self.n_heads, C // self.n_heads).transpose(1, 2)
 
-        
-        attn = self.attention(k,q,v,self.mask)
+        attn = self.attention(k, q, v, self.mask)
         v = attn.transpose(1, 2).reshape(B, T, C)
         x = self.proj(v)
         return x
-    
+
     @staticmethod
-    def attention(k,q,v,mask):
-        B,n_head,T,C = k.shape
+    def attention(k, q, v, mask):
+        B, n_head, T, C = k.shape
         wei = (q @ k.transpose(-1, -2)) * (C**-0.5)
         wei = mask[:, :, :T, :T] + wei
         wei = F.softmax(wei, dim=-1)
         x = wei @ v
         return x
-        
-        
 
 
 class MLP(nn.Module):
@@ -238,9 +235,10 @@ class GPT(nn.Module):
 
         return logits
 
+
 @torch.no_grad()
 def generate(model, idx, max_new_tokens):
-    idx = torch.zeros((1,block_size)).to(device).long()
+    idx = torch.zeros((1, block_size)).to(device).long()
     for i in range(max_new_tokens):
         idx_cond = idx[:, -block_size:]
         logits = model(idx_cond)
@@ -249,7 +247,7 @@ def generate(model, idx, max_new_tokens):
         idx_next = torch.multinomial(probs, num_samples=1)
         idx = torch.cat((idx, idx_next), dim=1)
     model.train()
-    return idx[:,block_size:]
+    return idx[:, block_size:]
 
 
 model_args = ModelArgs(
@@ -268,35 +266,36 @@ print(sum(math.prod(p.shape) for p in m.parameters()) / 1e6, "M parameters")
 optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
 
-for iter in range(1,max_iters):
+for iter in range(1, max_iters):
     if iter % eval_interval == 0 or iter == max_iters - 1:
-        print("="*50)
+        print("=" * 50)
         losses = estimate_loss()
         print(
             f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
         )
         context = torch.zeros((1, 1)).to(device).long()
-        print(tokenizer.decode(generate(model,context, max_new_tokens=500)[0].tolist()))
+        print(
+            tokenizer.decode(generate(model, context, max_new_tokens=500)[0].tolist())
+        )
         optimizer.zero_grad()
-        print("-"*50)
+        print("-" * 50)
 
     data, targets = get_batch("train")
     logits = model(data)
     # print(sum(model.token_embedding.weight.reshape(-1).tolist()))
-
 
     B, T, C = logits.shape
     logits = logits.view(B * T, C)
     targets = targets.view(B * T)
 
     loss = F.cross_entropy(logits, targets)
-    
+
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
-    
-    if iter%50==0:
+
+    if iter % 50 == 0:
         print(f"{iter=} {loss.item()=}")
 
 context = torch.zeros((1, 1)).to(device).long()
-print(tokenizer.decode(generate(model,context, max_new_tokens=500)[0].tolist()))
+print(tokenizer.decode(generate(model, context, max_new_tokens=500)[0].tolist()))

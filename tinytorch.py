@@ -433,7 +433,7 @@ class Slice(Function):
                 grad_x[slice_args] = grad.data
         else:
             for s in np.array(slice_args).reshape(-1):
-                grad_x[s] += grad.data[s]
+                grad_x[slice_args] = grad_x[slice_args] + grad.data[s]
         return Tensor(grad_x), None
 
 
@@ -483,6 +483,7 @@ class Max(Function):
         grad_x = normalized_mask * grad_broadcasted
 
         return Tensor(grad_x), None
+
 
 class Power(Function):
     @staticmethod
@@ -895,11 +896,6 @@ class Adam(Optimizer):
 
 
 if __name__ == "__main__":
-    x = tensor(2, requires_grad=True)
-
-    def f(x):
-        return (x + 1) / x
-
-    z = f(x)
-    z.backward()
+    x = Parameter(Tensor([0, 1]))
+    x[[0, 0]].sum().backward()
     print(x.grad)
