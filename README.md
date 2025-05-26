@@ -88,9 +88,10 @@ sudo apt-get install -y graphviz # IDK what to do for windows I use wsl
 Bcs I was bored
 
 ### DEV BLOG
-- Part 1: [pythonstuff/build-tensors](https://www.pythonstuff.com/blog/buinging%20own%20autograd%20engine%20tinytorch%2001) 
-- Part 2: [pythonstuff/backward-pass](https://www.pythonstuff.com/blog/buinging%20own%20autograd%20engine%20tinytorch%2001)
-- Part 3: [pythonstuff/refactor-&-cleanup](https://www.pythonstuff.com/blog/buinging%20own%20autograd%20engine%20tinytorch%2001)
+- Part 1: [pythonstuff/build-tensors](https://pythonstuff.com/blog/buinging-own-autograd-engine-tinytorch-01) 
+- Part 2: [pythonstuff/backward-pass](https://pythonstuff.com/blog/buinging-own-autograd-engine-tinytorch-02)
+- Part 3: [pythonstuff/refactor-&-cleanup](https://pythonstuff.com/blog/buinging-own-autograd-engine-tinytorch-04)
+- Part 4: [pythonstuff/boradcasting](https://pythonstuff.com/blog/buinging-own-autograd-engine-tinytorch-04)
 
 #### powerlevel
 1.0 -  karpathy [micrograd](https://github.com/karpathy/micrograd) (really simple, not much you can do with it) <br>
