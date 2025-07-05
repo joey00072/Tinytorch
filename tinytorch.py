@@ -375,8 +375,30 @@ class MatMul(Function):
             axes[dim1], axes[dim2] = dim2, dim1
             return x.transpose(axes)
 
-        grad_x = np.matmul(grad.data, transpose_last_axis(y.data))
-        grad_y = transpose_last_axis(x.data) @ grad.data
+        if len(x.shape) == 1 and len(y.shape) == 1:
+            # vector * vector
+            grad_x = grad.data * y.data
+            grad_y = x.data * grad.data
+        elif len(x.shape) == 1:
+            # vector * matrix
+            grad_x = grad.data @ y.data.T
+            grad_y = np.outer(x.data, grad.data)
+        elif len(y.shape) == 1:
+            # matrix * vector
+            dim_diff = len(y.shape) - len(x.shape)
+            axis_to_sum = tuple(range(dim_diff))
+            grad_x = np.outer(grad.data, y).sum(axis=axis_to_sum)
+            grad_y = grad.data.T @ x.data
+        else:
+            # matrix * matrix
+            dim_diff = len(y.shape) - len(x.shape)
+            axis_to_sum = tuple(range(dim_diff))
+            print(axis_to_sum)
+            grad_x = (grad.data @ transpose_last_axis(y.data)).sum(axis=axis_to_sum)
+            dim_diff_y = len(x.shape) - len(y.shape)
+            axis_to_sum_y = tuple(range(dim_diff_y))
+            grad_y = (transpose_last_axis(x.data) @ grad.data).sum(axis=axis_to_sum_y)
+
         return Tensor(grad_x), Tensor(grad_y)
 
 

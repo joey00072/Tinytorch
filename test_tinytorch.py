@@ -568,3 +568,42 @@ def test_attention():
     assert np.allclose(
         vt.grad.numpy(), vtt.grad.data, atol=1e-5
     ), "Gradients do not match between PyTorch and tinytorch."
+
+
+def test_xor_matmul_backward():
+    class XorNet(tinytorch.Module):
+        def __init__(self):
+            super().__init__()
+            self.l1 = tinytorch.Linear(2, 2)
+            self.l2 = tinytorch.Linear(2, 1)
+
+        def forward(self, x):
+            x = self.l1(x)
+            x = tinytorch.tanh(x)
+            x = self.l2(x)
+            x = tinytorch.tanh(x)
+            return x
+
+    x = tinytorch.tensor(
+        [
+            [0, 0],
+            [1, 0],
+            [0, 1],
+            [1, 1],
+        ]
+    )
+    y = tinytorch.tensor(
+        [
+            [0],
+            [1],
+            [1],
+            [0],
+        ]
+    )
+    model = XorNet()
+    loss = tinytorch.Tensor([0.0])
+    for i in range(2):
+        for x1, y1 in zip(x, y):
+            pred = model(x1)
+            loss += tinytorch.mse_loss(pred, y1)
+    loss.backward()
